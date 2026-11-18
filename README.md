@@ -2,7 +2,7 @@
 
 ## What SRT Bridge does
 
-Have you always wanted to send video signals to your studio, to other production locations or to your client with (almost) no additional infrastructure? To do that, you almost always needed either a LiveU or some other service that costs money.
+Have you always wanted to send video signals over internet to your studio, to other production locations or to your client with (almost) no additional infrastructure? To do that, you almost always needed either a LiveU or some other service that costs money.
 
 You can try SRT Bridge on your internal network without having to do anything to the router; you just need to run the setup, start the program, and click the “Add Firewall Rules” button in the setup.
 
