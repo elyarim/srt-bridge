@@ -14,7 +14,7 @@ Install this Bridge in your studio on a mid-range computer (Windows 10/11) with 
 
 For SRT inputs, the bridge passes the packets on unchanged. Nothing is decoded or encoded again, so the picture quality stays as it was sent and the delay is only the SRT latency on each leg.
 
-![SRT Bridge Main window showing one live input, three waiting inputs and four free slots](docs/main.png)
+![SRT Bridge 0.5.2 showing eight SRT channels and a live WHIP input on channel 9](docs/main.png)
 
 During installation, 8 channels are configured; you can adjust this number as desired in the setup.
 
