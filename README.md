@@ -8,7 +8,7 @@ You can try SRT Bridge on your internal network without having to do anything to
 
 ![The encoder and decoder both connect to SRT Bridge on UDP port 21101. Video and audio flow from the encoder through the bridge to the decoder.](docs/how-srt-bridge-works.png)
 
-SRT Bridge is a meeting point on the internet for SRT signals. The encoder at the venue and the decoder in the studio both **call** the bridge; neither of them needs an open port or a fixed address. On the transmitter and/or receiver side, it also works with any mobile phone Internet connection, as long as it has the necessary bandwidth. Only the PC with the bridge needs a public IP and one open UDP AND TCP port. The Bridge can be fully controlled remotely via the Internet.
+SRT Bridge is a meeting point on the internet for SRT signals. The encoder at the venue and the decoder in the studio both **call** the bridge; neither of them needs an open port or a fixed address. On the transmitter and/or receiver side, it also works with any mobile phone Internet connection, as long as it has the necessary bandwidth. For SRT streaming over the internet, only the bridge PC needs a public IP address and an open UDP port. You can also [operate the bridge remotely](#remote-control-over-https) from a web browser.
 
 Install this Bridge in your studio on a mid-range computer (Windows 10/11) with an Intel Core i7-6700. Of course, a newer computer will work as well. With this setup, you can easily transmit 8 video signals and optional output 4 of them locally as OMT. If you want to output more signals from the bridge computer, you’ll need a more modern machine: recommended; Intel Core Ultra 200S series desktop CPUs (Arrow Lake) with at least six performance cores and integrated Intel Graphics with hardware AV1 encoding support can be used. Suitable models include the Intel Core Ultra 5 245K, Intel Core Ultra 7 265K, and Intel Core Ultra 9 285K.
 
@@ -51,6 +51,17 @@ Example: 8 channels at 10 Mbit/s, each sent to 2 receivers over the internet, ne
 4. Click **Links** on the tile and copy the forward receiver URL to the decoder. Set the decoder to **Caller**. Use **Matrix** to choose which input it receives.
 
 The installer includes **SRT Bridge Output** for local OMT, NDI or SDI output. Configure it in **Outputs**. The **Help** tab explains stream IDs, routing and remote access.
+
+## Remote control over HTTPS
+
+Use the bridge interface from a browser to monitor signals, switch channels on or off, change matrix routing and manage outputs. SRT streams use **UDP**. The HTTPS interface uses **TCP on the same configured SRT port** (default **21101**).
+
+1. On the bridge PC, open **Setup → Remote access**, set a password and switch remote access on.
+2. In **Setup**, click **Set firewall rule** again and approve the Windows administrator prompt. Repeat this step even if SRT streaming already works, so Windows also allows incoming TCP connections.
+3. For access over the internet, forward **TCP** on that same port to the bridge PC alongside the existing **UDP** forwarding. On the local network, use the bridge PC's LAN address.
+4. Open `https://<bridge-address>:21101/` in your browser and sign in. If you changed the SRT port, use that number in the URL. On first connection, verify the certificate fingerprint against the one shown on the bridge PC.
+
+Remote-access settings, the SRT port and Windows firewall rules are managed on the bridge PC.
 
 ## Building from source
 
