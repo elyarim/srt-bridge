@@ -4,7 +4,7 @@
 
 Have you always wanted to send video signals to your studio, to other production locations or to your client with (almost) no additional infrastructure? To do that, you almost always needed either a LiveU or some other service that costs money.
 
-You can try SRT Bridge on your internal network without making any changes to the router; all you have to do is click the “Set Firewall Rule” button in the setup.
+You can try SRT Bridge on your internal network without having to do anything to the router; you just need to run the setup, start the program, and click the “Add Firewall Rules” button in the setup.
 
 ![The encoder and decoder both connect to SRT Bridge on UDP port 21101. Video and audio flow from the encoder through the bridge to the decoder.](docs/how-srt-bridge-works.png)
 
@@ -15,6 +15,8 @@ Install this Bridge in your studio on a mid-range computer (Windows 10/11) with 
 The bridge passes the packets on unchanged. Nothing is decoded or encoded again, so the picture quality stays as it was sent and the delay is only the SRT latency on each leg.
 
 ![SRT Bridge Main window showing one live input, three waiting inputs and four free slots](docs/main.png)
+
+During installation, 8 channels are configured; you can adjust this number as desired in the setup. Keep in mind that a shared port can only handle a limited amount of data (500–800 Mbits). If you want a higher number of channels, you can switch to “port/channel” in the setup.
 
 ## Getting started on Windows
 
