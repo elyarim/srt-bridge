@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SRT Bridge</title>
+<link rel="icon" href="logo.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app">
+  <header class="side">
+    <div class="brand"><img src="logo.png" alt="" width="34" height="34"><span><b>SRT</b> Bridge</span></div>
+    <nav id="nav">
+      <button type="button" data-go="main" class="on">Main</button>
+      <button type="button" data-go="matrix">Matrix</button>
+      <button type="button" data-go="receivers">Receivers</button>
+      <button type="button" data-go="outputs">Outputs</button>
+      <button type="button" data-go="keys">Generate key</button>
+      <button type="button" data-go="setup">Setup</button>
+      <button type="button" data-go="log">Log</button>
+      <button type="button" data-go="help">Help</button>
+      <button type="button" id="logoutBtn" hidden title="Ends the remote login in this browser">Log out</button>
+    </nav>
+    <div class="chBadge" id="portBadge">starting</div>
+    <div class="topRight"><div class="credit" id="credit">Peter Aellig</div><div id="clock">--:--:--</div></div>
+    <div class="resources">
+      <div><span id="sidePortLbl">SRT port</span><strong id="sidePort">–</strong></div>
+      <div><span>Live</span><strong id="sideLive">–</strong></div>
+      <div><span>Receivers</span><strong id="sideRecv">–</strong></div>
+      <div><span>In</span><strong id="sideIn">–</strong></div>
+      <div><span>Out</span><strong id="sideRate">–</strong></div>
+      <div><span>SRT</span><strong id="sideSrt">–</strong></div>
+      <div class="sepRow"><span>CPU</span><strong id="sideCpu">–</strong></div>
+      <div><span>CPU bridge</span><strong id="sideCpuProc">–</strong></div>
+      <div><span>RAM</span><strong id="sideRam">–</strong></div>
+      <div><span>RAM bridge</span><strong id="sideRamProc">–</strong></div>
+    </div>
+  </header>
+
+  <main>
+
+    <section data-page="main">
+      <div class="noteBar"><span id="mainNote" class="titleNote"></span><span id="mainErr" class="titleNote err"></span></div>
+      <div class="tiles" id="tiles"></div>
+
+      <div class="card" id="rejCard" hidden>
+        <div class="cardHead">
+          <h2>Turned away <small class="dim">· connection attempts the bridge did not accept</small></h2>
+          <button type="button" id="rejClear">Clear</button>
+        </div>
+        <div class="tableWrap"><table class="logTable" id="rejected"></table></div>
+      </div>
+    </section>
+
+    <section data-page="matrix" hidden>
+      <div class="card">
+        <div class="cardHead">
+          <h2>Matrix <small class="dim" id="mxSub">· row = forward output, column = input · one input per row</small><span id="mxNote" class="titleNote"></span><span id="mxErr" class="titleNote err"></span></h2>
+        </div>
+        <div class="mxwrap"><table class="mx" id="mx"></table></div>
+        <div class="leg" id="mxLeg"></div>
+      </div>
+    </section>
+
+    <section data-page="receivers" hidden>
+      <div class="card">
+        <div class="cardHead"><h2>Receivers <small class="dim">· every device that fetches a signal</small></h2></div>
+        <div class="tableWrap tall"><table class="logTable" id="recvTable"></table></div>
+      </div>
+    </section>
+
+    <section data-page="outputs" hidden>
+      <div class="card">
+        <div class="cardHead"><h2>Bridge Output <small class="dim">· decodes signals on this PC and sends them out as OMT, NDI or SDI</small><span id="opNote" class="titleNote"></span><span id="opErr" class="titleNote err"></span></h2></div>
+        <div class="stepRow">
+          <span class="lamp" id="opLamp"><i></i><span id="opText">–</span></span>
+          <button type="button" id="opStart" class="primary">Start</button>
+          <button type="button" id="opStop">Stop</button>
+        </div>
+        <p class="dim small" id="opInfo">&nbsp;</p>
+        <label class="check"><input type="checkbox" id="opAuto"><span>Start Bridge Output with the bridge</span></label>
+      </div>
+
+      <div class="card">
+        <div class="cardHead"><h2>Outputs <small class="dim">· one row per signal</small><span id="ooNote" class="titleNote"></span><span id="ooErr" class="titleNote err"></span></h2>
+          <div class="headHints"><span>OMT (Open Media Transport, MIT licence) is built in.</span><span>NDI uses the NDI runtime installed with NDI Tools; it is not part of this program. NDI® is a registered trademark of Vizrt NDI AB. <a href="https://ndi.video/" target="_blank" rel="noopener">ndi.video</a></span></div></div>
+        <div class="tableWrap"><table class="logTable opTable" id="opTable"></table></div>
+        <p class="dim small">SIGNAL = the bridge has an input on this signal. Choose an output and the signal is decoded and sent out under its output name; before it goes on air, Bridge Output checks that nobody on the network uses that name. On an SDI port the output follows the picture format of the signal; each port serves one signal.</p>
+      </div>
+
+      <div class="card narrow">
+        <div class="cardHead"><h2>Program<span id="opPathNote" class="titleNote"></span><span id="opPathErr" class="titleNote err"></span></h2></div>
+        <form class="stepRow" id="opPathForm">
+          <input id="opPath" placeholder="empty = next to the bridge" autocomplete="off" spellcheck="false">
+          <button type="submit" class="primary">Save</button>
+        </form>
+        <p class="dim small" id="opPathHelp">&nbsp;</p>
+      </div>
+    </section>
+
+    <section data-page="keys" hidden>
+      <div class="keyGrid">
+        <div class="card">
+          <div class="cardHead"><h2>Sender key <small class="dim">· stream ID the sender uses</small><span id="genNote" class="titleNote"></span><span id="genErr" class="titleNote err"></span></h2></div>
+          <div class="genKey"><code id="genKey">–</code><button type="button" id="genNew">New key</button><button type="button" id="genCopy">Copy</button></div>
+          <div class="stepRow genUse">
+            <label>Set as sender key of
+              <select id="genSlot"></select>
+            </label>
+            <button type="button" id="genSet" class="primary">Set</button>
+          </div>
+          <p class="dim small" id="genHelp">A new sender key disconnects the devices of that signal; they must use the new one.</p>
+          <h3>Original</h3>
+          <label>Receiving the original with the sender key
+            <select id="origSel">
+              <option value="allow">Allowed: whoever knows the sender key can also receive the signal unchanged</option>
+              <option value="off">Off: the sender key only sends, receivers need the receiver key</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="card">
+          <div class="cardHead"><h2>Receiver key <small class="dim">· stream ID for the forward output</small><span id="rxNote" class="titleNote"></span><span id="rxErr" class="titleNote err"></span></h2></div>
+          <div class="genKey"><code id="rxKey">–</code><button type="button" id="rxNew">New key</button><button type="button" id="rxCopy">Copy</button></div>
+          <div class="stepRow genUse rxUse">
+            <label>Set as receiver key of
+              <select id="rxSlot"></select>
+            </label>
+            <button type="button" id="rxSet" class="primary">Set</button>
+            <button type="button" id="rxClear">Remove</button>
+          </div>
+          <p class="dim small" id="rxHelp">With a receiver key, receivers do not need to know the sender key, and «sender key*forward» no longer works. A new key disconnects the receivers of that forward output.</p>
+          <h3>What receivers use</h3>
+          <div class="tableWrap"><table class="logTable rxTable" id="rxTable"></table></div>
+        </div>
+      </div>
+
+      <div class="card narrow">
+        <div class="cardHead"><h2>Settings<span id="keyNote" class="titleNote"></span><span id="keyErr" class="titleNote err"></span></h2></div>
+        <form id="keyForm">
+          <div class="fields3 keyFields">
+            <label>Length (10 to 70)
+              <input id="keyLen" type="number" min="10" max="70" required>
+            </label>
+            <label>Letters
+              <select id="keyCase">
+                <option value="mixed">Upper and lower case</option>
+                <option value="upper">Upper case only</option>
+                <option value="lower">Lower case only</option>
+              </select>
+            </label>
+            <label>Characters never used
+              <input id="keyExclude" autocomplete="off" spellcheck="false" maxlength="62">
+            </label>
+            <button type="submit" class="primary">Save</button>
+          </div>
+          <p class="dim small">Used here and by «Generate key» in the Edit window of every signal: a random key from the chosen letters and the digits 0–9. Characters listed under «never used» are left out, for example those that are easy to mix up (0 O 1 l I). These settings are saved on this computer only.</p>
+        </form>
+      </div>
+
+    </section>
+
+    <section data-page="setup" hidden>
+      <div class="keyGrid">
+      <div class="card">
+        <div class="cardHead"><h2>SRT<span id="setNote" class="titleNote"></span><span id="setErr" class="titleNote err"></span></h2></div>
+        <form id="setForm">
+          <label>Ports
+            <select id="setMode">
+              <option value="single">One port for all signals: the stream ID says which signal</option>
+              <option value="signal">One port per signal: the port says which signal, no stream ID needed</option>
+            </select>
+          </label>
+          <!-- The firewall sits next to the port it is about, not under the other fields:
+               «Set again» under the latency looked like the button that saves it. -->
+          <div class="portLine">
+            <label><span id="setPortLbl">UDP port (sending and receiving)</span>
+              <input id="setPort" type="number" min="1" max="65535" required>
+            </label>
+            <div class="fwBox">
+              <span class="fwHead">Windows Firewall for this port</span>
+              <div class="fwInline">
+                <span class="lamp" id="fwLamp2"><i></i><span id="fwText2">checking</span></span>
+                <button type="button" id="fwBtn2" class="sm">Set firewall rule</button>
+              </div>
+            </div>
+          </div>
+          <div class="fields2">
+            <label>Latency, at least (ms)
+              <input id="setLatency" type="number" min="20" max="8000" required>
+            </label>
+            <label>Number of signals
+              <input id="setSlots" type="number" min="1" max="32" required>
+            </label>
+          </div>
+          <label><span id="setSuffixesLbl">Forward suffixes, separated by commas (the first one is used in the links)</span>
+            <input id="setSuffixes" autocomplete="off" spellcheck="false" required>
+          </label>
+          <label><span id="setAcceptLbl">Unknown stream IDs</span>
+            <select id="setAccept">
+              <option value="any">Every stream ID: an unknown ID takes the next free signal</option>
+              <option value="listed">Only the stream IDs set here: unknown IDs are turned away</option>
+            </select>
+          </label>
+          <p class="dim small" id="setHelp"></p>
+          <div class="row end"><button type="submit" class="primary">Save</button></div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="cardHead"><h2>Internet access<span id="netNote" class="titleNote"></span><span id="netErr" class="titleNote err"></span></h2></div>
+
+        <h3>1 · Windows Firewall on this PC</h3>
+        <div class="stepRow">
+          <span class="lamp" id="fwLamp"><i></i><span id="fwText">checking</span></span>
+          <button type="button" id="fwBtn">Add firewall rule</button>
+        </div>
+        <p class="dim small" id="fwHelp"></p>
+
+        <h3>2 · Port forwarding in the router</h3>
+        <p class="stepText">Forward <b id="fwdPort">UDP –</b> to this PC: <b id="fwdHost">–</b>. <span id="fwdOnly">Only UDP is needed.</span> This is set in the router, not here.</p>
+        <p class="dim small" id="fwdHelp"></p>
+
+        <h3>3 · Public IP for the links</h3>
+        <form class="stepRow" id="ipForm">
+          <input id="publicIp" placeholder="not set" autocomplete="off" spellcheck="false" inputmode="decimal">
+          <button type="button" id="ipDetect">Detect</button>
+          <button type="submit" class="primary">Save</button>
+        </form>
+        <p class="dim small" id="ipHint">The address of this site on the internet. It is offered in the Links window of every signal.</p>
+      </div>
+
+      <div class="card">
+        <div class="cardHead"><h2>Windows<span id="asNote" class="titleNote"></span><span id="asErr" class="titleNote err"></span></h2></div>
+        <label class="check"><input type="checkbox" id="asOn"><span>Start SRT Bridge with Windows</span></label>
+        <p class="dim small" id="asHelp">&nbsp;</p>
+      </div>
+
+      <div class="card">
+        <div class="cardHead"><h2>Remote access <small class="dim">· this interface over HTTPS, from anywhere</small><span id="rmNote" class="titleNote"></span><span id="rmErr" class="titleNote err"></span></h2></div>
+        <p class="small certNote certFirst">On the first visit the browser warns that the connection is not secure: confirm it once to go on (see the orange text below).</p>
+        <div class="stepRow">
+          <span class="lamp" id="rmLamp"><i></i><span id="rmText">–</span></span>
+          <button type="button" id="rmToggle">Switch on</button>
+        </div>
+        <p class="dim small" id="rmHelp"></p>
+
+        <h3>Password</h3>
+        <form class="stepRow" id="rmPassForm">
+          <input id="rmPass" type="password" autocomplete="new-password" placeholder="new password, 10 characters or more" maxlength="128">
+          <input id="rmPass2" type="password" autocomplete="new-password" placeholder="repeat it" maxlength="128">
+          <button type="submit" class="primary">Set password</button>
+        </form>
+        <p class="dim small" id="rmPassHelp"></p>
+
+        <h3>Address</h3>
+        <div class="genKey"><code id="rmUrl">–</code><button type="button" id="rmUrlCopy">Copy</button><button type="button" id="rmUrlQr">QR code</button></div>
+        <p class="small certNote">Certificate fingerprint (SHA-256): <code id="rmFp" class="fp">–</code></p>
+        <p class="small certNote">The bridge made this certificate itself, so the browser warns on the first visit. Compare the fingerprint in the browser (padlock or «Not secure» → certificate) with this one, then go on to the page.</p>
+
+        <h3>API token for programs</h3>
+        <div class="genKey"><code id="rmToken">–</code><button type="button" id="rmTokenNew">New token</button><button type="button" id="rmTokenCopy">Copy</button></div>
+        <p class="dim small">A program reads <code>GET /api/state</code> on the address above, once a second at most, with the header <code>Authorization: Bearer</code> and the token. A new token stops the old one at once.</p>
+      </div>
+      </div>
+    </section>
+
+    <section data-page="log" hidden>
+      <div class="card">
+        <div class="cardHead"><h2>Log <small class="dim" id="logWhere">· newest first</small></h2></div>
+        <div class="tableWrap tall"><table class="logTable" id="events"></table></div>
+      </div>
+    </section>
+
+    <section data-page="help" hidden>
+      <div class="card help helpIntro">
+        <img src="help.jpg" alt="An SRT encoder in an OB truck or the Haivision Pro app on a phone sends to SRT Bridge with the stream key streamkey2345; a decoder in the studio or a Kiloview D350 receives streamkey2345*forward. All devices are callers, only the bridge has a public IP." width="1192" height="1320">
+        <div>
+          <h2>What SRT Bridge does</h2>
+          <p>SRT Bridge is a meeting point on the internet for SRT signals. The encoder at the venue and the decoder in the studio both <b>call</b> the bridge; neither of them needs an open port or a fixed address. Only the PC with the bridge needs a public IP and one open UDP port.</p>
+          <p>The bridge passes the packets on unchanged. Nothing is decoded or encoded again, so the picture quality stays as it was sent and the delay is only the SRT latency on each leg.</p>
+          <h3>The example in the picture</h3>
+          <ol>
+            <li>The encoder (OB truck, or the Haivision Pro app on a phone) calls <code>srt://public IP:port</code> with the stream key <code>streamkey2345</code>. It is now the input of a signal.</li>
+            <li>The decoder (studio, or a Kiloview D350) calls the same address with <code>streamkey2345*forward</code> and receives what the matrix assigns to that signal.</li>
+            <li>The Links button on every tile gives these addresses ready to copy, or as a QR code for a phone.</li>
+          </ol>
+          <h3>Keys</h3>
+          <ul>
+            <li><b>Sender key</b>: the stream ID the sender uses. An unknown key takes the next free signal (Setup can turn unknown keys away instead).</li>
+            <li><b>Receiver key</b> (optional, page Generate key): its own stream ID for the receivers. Then they do not need to know the sender key, and <code>sender key*forward</code> no longer works.</li>
+            <li><b>Original</b>: whoever knows the sender key can also receive the signal unchanged with it. On the Generate key page this can be switched off; then the sender key only sends.</li>
+            <li><b>Passphrase</b> (Edit window): encrypts the connection, separately for the sender side and for the forward output. 10 to 79 characters, empty = none.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="keyGrid">
+        <div class="card help">
+          <h2>The tiles</h2>
+          <dl class="helpList">
+            <dt>LIVE · WAITING · FREE</dt><dd>an input delivers data · a key is set but nothing comes in · no key</dd>
+            <dt>bitrate</dt><dd>what the input delivers now</dd>
+            <dt>video · audio</dt><dd>TV norm and codec, audio channels of all tracks together, read from the signal</dd>
+            <dt>loss · drops</dt><dd>in the last minute, so errors at the start go away by themselves; the totals since connecting are in the tooltip. Loss: lost on the way and sent again by SRT, nothing is missing. Drops: did not arrive in time, really missing in the picture</dd>
+            <dt>RTT · latency</dt><dd>round trip time to the sender · SRT latency of the connection</dd>
+            <dt>on air · from</dt><dd>time since the input went live, restarts · address of the sender</dd>
+            <dt>error</dt><dd>why a device was turned away in the last 10 seconds, for example «passphrase missing»</dd>
+            <dt>original out</dt><dd>devices that receive this signal unchanged with the sender key</dd>
+            <dt>forward out</dt><dd>which input the matrix gives to this forward output, and how many devices receive it</dd>
+          </dl>
+          <h2>Matrix</h2>
+          <p>Row = forward output, column = input. Every forward output gets one input; «all ↓» gives one input to all of them. Set it before the show: a change reconnects the receivers of that row once.</p>
+        </div>
+
+        <div class="card help">
+          <h2>Setup</h2>
+          <ul>
+            <li><b>One port for all signals</b> (default): the stream ID says which signal a device means.</li>
+            <li><b>One port per signal</b>: signal 1 on the first port, signal 2 on the next, no stream ID needed. Whoever sends to a port is its input, whoever only listens there gets the matrix output. Sender and receiver keys do not exist in this mode.</li>
+            <li><b>Latency</b>: the lowest value the bridge accepts; a device that asks for more gets more.</li>
+            <li><b>Set firewall rule</b> (next to the port): after a new port, this opens it in the Windows Firewall. Windows asks for confirmation as administrator.</li>
+            <li><b>Internet access</b>: Windows Firewall rule, port forwarding (UDP only) in the router, public IP for the links.</li>
+          </ul>
+          <h2>SRT version</h2>
+          <p>The bridge does not use the SRT library of Haivision (libsrt, today version 1.5.x) but <b>gosrt</b> 0.13.0 by datarhei, an SRT implementation written in Go. gosrt speaks the SRT protocol of version <b>1.4.1</b>; that is the number shown at the top.</p>
+          <p>Devices with SRT 1.4.1 up to 1.5.x connect normally: both sides agree on the version they share. What is missing are features that came with 1.5: connection bonding (one signal over two lines at once) and AES-GCM encryption. Devices older than SRT 1.4.1 can be turned away.</p>
+          <h2>Good to know</h2>
+          <ul>
+            <li>Measured on the development laptop: about 800 Mbit/s going out in total over one port.</li>
+            <li>This interface has no login; it is only reachable on this PC.</li>
+            <li>The settings are kept in <code>%APPDATA%\SRTBridge\config.json</code>, the log in <code>%LOCALAPPDATA%\SRTBridge</code> (the Log page shows both). A config.json next to the program keeps both there instead.</li>
+            <li>SRT Bridge Output, a separate program, shows the signals of this PC as OMT, NDI or SDI.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog id="linkDlg">
+  <div class="cardHead"><h2 id="linkTitle">Links</h2><button type="button" data-close>Close</button></div>
+  <label>Address of this PC
+    <select id="linkAddr"></select>
+  </label>
+  <div id="linkList"></div>
+</dialog>
+
+<dialog id="qrDlg" class="qr">
+  <div class="cardHead"><h2 id="qrTitle">QR code</h2><button type="button" data-close>Close</button></div>
+  <div class="qrBox"><img id="qrImg" alt="QR code of the link" width="360" height="360"></div>
+  <code id="qrText"></code>
+</dialog>
+
+<dialog id="editDlg">
+  <form id="editForm">
+    <div class="cardHead"><h2 id="editTitle">Signal</h2><span id="editErr" class="err"></span></div>
+    <label>Name (only shown here)
+      <input id="editName" autocomplete="off" maxlength="40">
+    </label>
+    <div class="fields2">
+      <label><span id="editIdLbl">Sender key (stream ID) · empty = the signal is free</span>
+        <span class="idInput"><input id="editId" autocomplete="off" spellcheck="false"><button type="button" id="editGen" class="sm" title="A new random key (settings on the Generate key page); Save sets it">Generate key</button></span>
+      </label>
+      <label><span id="editRecvLbl">Receiver key · empty = sender key*forward</span>
+        <span class="idInput"><input id="editRecv" autocomplete="off" spellcheck="false"><button type="button" id="editRecvGen" class="sm" title="A new random key (settings on the Generate key page); Save sets it">Generate key</button></span>
+      </label>
+      <label><span id="editPassInLbl">Passphrase: input and original · empty = none</span>
+        <input id="editPassIn" autocomplete="off" spellcheck="false" maxlength="79">
+      </label>
+      <label><span id="editPassFwdLbl">Passphrase: forward output · empty = none</span>
+        <input id="editPassFwd" autocomplete="off" spellcheck="false" maxlength="79">
+      </label>
+    </div>
+    <p class="dim small" id="editHelp"></p>
+    <div class="row end"><button type="button" data-close>Cancel</button><button type="submit" class="primary">Save</button></div>
+  </form>
+</dialog>
+
+<dialog id="loginDlg" class="qr">
+  <form id="loginForm">
+    <div class="cardHead"><h2>SRT Bridge · login</h2></div>
+    <label>Password
+      <input id="loginPass" type="password" autocomplete="current-password" required>
+    </label>
+    <p class="err small" id="loginErr"></p>
+    <div class="row end"><button type="submit" class="primary">Log in</button></div>
+  </form>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

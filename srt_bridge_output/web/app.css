@@ -1,0 +1,38 @@
+/* The colours of the SRT Bridge (web/app.css there): night-blue desk, navy card with a light-blue ring. */
+:root {
+  --bg: #0b1220; --head: #0e1830; --card: #1d2e50; --rowline: #2c426f; --headrow: #1a2a4a;
+  --line: #3d5a96; --ring: #3b6fd0; --edge: #8cbcff;
+  --text: #e6edf7; --dim: #8fa0bf; --accent2: #7fb0ff;
+  --ok: #34c58a; --ok-dark: #14503a; --bad: #e06666; --bad-text: #ffb3bb;
+  --shadow-card: 0 4px 14px rgba(0, 0, 0, .35);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+:focus-visible { outline: 2px solid var(--edge); outline-offset: 2px; }
+body { margin: 0; font: 14px/1.4 system-ui, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); font-variant-numeric: tabular-nums; }
+header { display: flex; align-items: center; gap: 24px; padding: 10px 20px; background: var(--head); border-bottom: 1px solid #16233f; }
+h1 { font-size: 18px; margin: 0; font-weight: 400; white-space: nowrap; color: var(--accent2); display: flex; align-items: center; gap: 10px; }
+h1 img { display: block; flex: none; }
+h1 b { color: #fff; font-weight: 700; }
+.bridge { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bridge.sdiCard { flex: 0 1 auto; }
+.ver { color: var(--dim); white-space: nowrap; }
+main { padding: 16px 20px; }
+.card { background: var(--card); border: 2px solid var(--ring); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-card); }
+.row { display: grid; grid-template-columns: 110px 24px 150px 150px 180px 1fr; align-items: center; gap: 12px; height: 46px; padding: 0 14px; border-top: 1px solid var(--rowline); }
+.row.head { height: 34px; border-top: 0; background: var(--headrow); color: var(--dim); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.row > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sig { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+/* State is never colour alone: the word next to the lamp says the same. */
+.lamp { width: 14px; height: 14px; border-radius: 50%; background: #3a4a66; border: 2px solid #6b7c99; flex: none; }
+.lamp.on { background: var(--ok); border-color: #7bf0c0; box-shadow: 0 0 0 3px #34c58a33; }
+.lamp.bad { background: transparent; border-color: var(--bad); }
+.sig.off { color: var(--dim); font-weight: 400; }
+select, input[type=text] { width: 100%; height: 30px; font: inherit; color: var(--text); background: #0b1428; border: 1px solid var(--line); border-radius: 8px; }
+select { padding: 0 6px; }
+input[type=text] { padding: 0 8px; }
+input[type=text]:disabled { color: var(--dim); background: transparent; border-style: dashed; }
+option:disabled { color: var(--dim); }
+.dec { color: #c3cfe3; font-size: 13px; }
+.dec.bad { color: var(--bad-text); font-weight: 600; }
+.note { color: var(--dim); font-size: 13px; margin: 12px 2px; }

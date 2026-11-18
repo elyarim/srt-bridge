@@ -1,0 +1,3 @@
+// Icon of srt-bridge-output.exe and its window. build.ps1 turns this into rsrc_windows_amd64.syso
+// with windres; Go links a .syso in the package folder by itself.
+1 ICON "logo/srt_bridge_output.ico"

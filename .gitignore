@@ -1,0 +1,11 @@
+*.exe
+*.log
+config.json
+output-config.json
+remote-cert.pem
+remote-key.pem
+dist/
+bin/
+build/
+installer/payload/
+*.obj

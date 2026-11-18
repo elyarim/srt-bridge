@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SRT Bridge Output</title>
+<link rel="stylesheet" href="app.css">
+<link rel="icon" href="logo.png">
+</head>
+<body>
+<header>
+  <h1><img src="logo.png" alt="" width="40" height="40"><span><b>SRT</b> Bridge Output</span></h1>
+  <div class="bridge"><span class="lamp" id="bridgeLamp"></span><span id="bridgeText">looking for the bridge…</span></div>
+  <div class="bridge sdiCard"><span class="lamp" id="sdiLamp"></span><span id="sdiText">looking for SDI cards…</span></div>
+  <div class="ver" id="ver"></div>
+</header>
+<main>
+  <div class="card">
+    <div class="row head">
+      <div>Signal</div><div>#</div><div>Bridge name</div><div>Output</div><div>Output name</div><div>Decoder</div>
+    </div>
+    <div id="rows"></div>
+  </div>
+  <p class="note">Green = the bridge has an input on this signal. Choose an output and the signal is decoded and sent out under its output name. Before it goes on air the program checks that nobody on the network uses that name. On an SDI port the output follows the picture format of the signal; each port serves one signal.</p>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
