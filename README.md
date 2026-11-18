@@ -1,9 +1,10 @@
-# <img src="docs/logo.png" width="36" alt=""> SRT Bridge
+# <img src="docs/logo.png" width="46" alt=""> SRT Bridge
 
 ## What SRT Bridge does
 
 Have you always wanted to send video signals to your studio, to other production locations or to your client with (almost) no additional infrastructure? To do that, you almost always needed either a LiveU or some other service that costs money.
-SRT Bridge is a meeting point on the internet for SRT signals. The encoder at the venue and the decoder in the studio both **call** the bridge; neither of them needs an open port or a fixed address. Only the PC with the bridge needs a public IP and one open UDP AND TCP port.
+SRT Bridge is a meeting point on the internet for SRT signals. The encoder at the venue and the decoder in the studio both **call** the bridge; neither of them needs an open port or a fixed address. On the transmitter and/or receiver side, it also works with any mobile phone Internet connection, as long as it has the necessary bandwidth. Only the PC with the bridge needs a public IP and one open UDP AND TCP port.
+
 Install this Bridge in your studio on a mid-range computer (Windows 10/11) with an Intel Core i7-6700. Of course, a newer computer will work as well. With this setup, you can easily transmit 8 video signals and optional output 4 of them locally as OMT. If you want to output more signals from the bridge computer, you’ll need a more modern machine: recommended; Intel Core Ultra 200S series desktop CPUs (Arrow Lake) with at least six performance cores and integrated Intel Graphics with hardware AV1 encoding support can be used. Suitable models include the Intel Core Ultra 5 245K, Intel Core Ultra 7 265K, and Intel Core Ultra 9 285K.
 
 The bridge passes the packets on unchanged. Nothing is decoded or encoded again, so the picture quality stays as it was sent and the delay is only the SRT latency on each leg.
