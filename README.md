@@ -4,6 +4,8 @@
 
 Have you always wanted to send video signals to your studio, to other production locations or to your client with (almost) no additional infrastructure? To do that, you almost always needed either a LiveU or some other service that costs money.
 
+You can try SRT Bridge on your internal network without making any changes to the router; all you have to do is click the “Set Firewall Rule” button in the setup.
+
 ![The encoder and decoder both connect to SRT Bridge on UDP port 21101. Video and audio flow from the encoder through the bridge to the decoder.](docs/how-srt-bridge-works.png)
 
 SRT Bridge is a meeting point on the internet for SRT signals. The encoder at the venue and the decoder in the studio both **call** the bridge; neither of them needs an open port or a fixed address. On the transmitter and/or receiver side, it also works with any mobile phone Internet connection, as long as it has the necessary bandwidth. Only the PC with the bridge needs a public IP and one open UDP AND TCP port. The Bridge can be fully controlled remotely via the Internet.
