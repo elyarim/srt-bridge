@@ -37,3 +37,5 @@ The installer script builds both components and writes the setup executable and 
 SRT Bridge and SRT Bridge Output are licensed under the [BSD Zero Clause License (0BSD)](LICENSE). Copyright © 2026 Peter Aellig.
 
 Bundled third-party components retain their own licenses. See the [Fraunhofer FDK AAC license](srt_bridge_output/engine/third_party/fdk-aac/NOTICE) and the [OMT MIT license](srt_bridge_output/engine/third_party/omt/LICENSE.txt).
+
+Written by Peter Aellig and Claude Fable 5.2 (Anthropic).
