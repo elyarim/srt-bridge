@@ -18,6 +18,10 @@ For SRT inputs, the bridge passes the packets on unchanged. Nothing is decoded o
 
 During installation, 8 channels are configured; you can adjust this number as desired in the setup.
 
+For internet ingest behind a router, forward both TCP and UDP on the configured WHIP port to the bridge PC. SRT receivers still call the usual SRT address. They can receive the WHIP input by its stream ID or use an existing forward output assigned to **WHIP** in **Matrix**.
+
+The channel tiles now group the controls for each signal. Choose **Off** to disconnect the channel and block reconnections. Choose **Switch on** to accept connections again.
+
 ## WHIP input and channel controls in 0.5.2
 
 Enable **WHIP input** in **Setup** to add one input after the configured SRT channels. With eight channels, WHIP appears as the ninth tile. Enter the bridge's WHIP URL and bearer token in the sender.
@@ -27,10 +31,6 @@ Enable **WHIP input** in **Setup** to add one input after the configured SRT cha
 | WHIP sender to bridge | 21102/TCP | WHIP signaling |
 | WHIP sender to bridge | 21102/UDP | Incoming WebRTC media |
 | Bridge to SRT receiver | 21101/UDP | SRT playback on the usual SRT port |
-
-For internet ingest behind a router, forward both TCP and UDP on the configured WHIP port to the bridge PC. SRT receivers still call the usual SRT address. They can receive the WHIP input by its stream ID or use an existing forward output assigned to **WHIP** in **Matrix**.
-
-The channel tiles now group the controls for each signal. Choose **Off** to disconnect the channel and block reconnections. Choose **Switch on** to accept connections again.
 
 Physical limits
 The number of channels is not the limit; the total data rate is. In single-port mode, all receivers together share one UDP port. On the development laptop, this port delivered about 800 Mbit/s of outgoing data in total. Every receiver counts separately: a 10 Mbit/s signal fetched by 5 receivers uses 50 Mbit/s.
