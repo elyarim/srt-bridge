@@ -9,6 +9,8 @@ Install this Bridge in your studio on a mid-range computer (Windows 10/11) with 
 
 The bridge passes the packets on unchanged. Nothing is decoded or encoded again, so the picture quality stays as it was sent and the delay is only the SRT latency on each leg.
 
+![The encoder and decoder both connect to SRT Bridge on UDP port 21101. Video and audio flow from the encoder through the bridge to the decoder.](docs/how-srt-bridge-works.png)
+
 ![SRT Bridge Main window showing one live input, three waiting inputs and four free slots](docs/main.png)
 
 ## Getting started on Windows
