@@ -16,7 +16,18 @@ The bridge passes the packets on unchanged. Nothing is decoded or encoded again,
 
 ![SRT Bridge Main window showing one live input, three waiting inputs and four free slots](docs/main.png)
 
-During installation, 8 channels are configured; you can adjust this number as desired in the setup. Keep in mind that a shared port can only handle a limited amount of data (500–800 Mbits). If you want a higher number of channels, you can switch to “port/channel” in the setup.
+During installation, 8 channels are configured; you can adjust this number as desired in the setup.
+
+Physical limits
+The number of channels is not the limit; the total data rate is. In single-port mode, all receivers together share one UDP port. On the development laptop, this port delivered about 800 Mbit/s of outgoing data in total. Every receiver counts separately: a 10 Mbit/s signal fetched by 5 receivers uses 50 Mbit/s.
+
+In practice, the network usually sets the limit first:
+
+Internet upload: the sum of all signals going out to the internet must fit into your upload bandwidth, with some headroom for SRT retransmissions (plan for about 25 % on top).
+Network card: a 1 Gbit/s link carries about 940 Mbit/s at most.
+Computer: CPU and network driver affect the result; the 800 Mbit/s figure is a measurement, not a guarantee.
+
+Example: 8 channels at 10 Mbit/s, each sent to 2 receivers over the internet, need about 160 Mbit/s of upload, plus about 25 %, so roughly 200 Mbit/s. 
 
 ## Getting started on Windows
 
