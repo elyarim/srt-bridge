@@ -57,6 +57,20 @@ Copy-Item (Join-Path $outRoot 'engine\third_party\fdk-aac\NOTICE') (Join-Path $p
 # libomt/libvmx (MIT) ask for their licence text with every copy.
 Copy-Item (Join-Path $outRoot 'engine\third_party\omt\LICENSE.txt') (Join-Path $payloadOut 'omt-LICENSE.txt') -ErrorAction Stop
 
+# The WHIP input (since 0.5.0): srt-bridge-whip (Go) and srt_bridge_aac (MSVC, libopus +
+# fdk-aac encoder), built by its own build.ps1, copied into payload\whip with the licences.
+$whipRoot = Join-Path (Split-Path $root -Parent) 'srt_bridge_whip'
+& (Join-Path $whipRoot 'build.ps1') | Out-Host
+$payloadWhip = Join-Path $PSScriptRoot 'payload\whip'
+if (Test-Path $payloadWhip) { Remove-Item $payloadWhip -Recurse -Force }
+New-Item -ItemType Directory -Force $payloadWhip | Out-Null
+foreach ($f in 'srt-bridge-whip.exe', 'srt_bridge_aac.exe') {
+    Copy-Item (Join-Path $whipRoot "bin\$f") $payloadWhip -ErrorAction Stop
+}
+Copy-Item (Join-Path $whipRoot 'engine\third_party\fdk-aac\NOTICE') (Join-Path $payloadWhip 'fdk-aac-NOTICE.txt') -ErrorAction Stop
+Copy-Item (Join-Path $whipRoot 'engine\third_party\opus\COPYING') (Join-Path $payloadWhip 'opus-COPYING.txt') -ErrorAction Stop
+Copy-Item (Join-Path $whipRoot 'bin\third_party_licenses.txt') $payloadWhip -ErrorAction Stop
+
 & $iscc "/DMyAppVersion=$version" (Join-Path $PSScriptRoot 'srt_bridge.iss')
 if ($LASTEXITCODE -ne 0) { throw 'ISCC failed' }
 

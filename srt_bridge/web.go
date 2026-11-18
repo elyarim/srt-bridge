@@ -53,7 +53,7 @@ func sameOrigin(next http.HandlerFunc) http.HandlerFunc {
 
 // newWebServer is the interface. rm and out may be nil (tests): then there is
 // no remote access and no Bridge Output.
-func newWebServer(h *Hub, rm *Remote, out *Output) http.Handler {
+func newWebServer(h *Hub, rm *Remote, out *Output, wp *Whip) http.Handler {
 	mux := http.NewServeMux()
 	static, _ := fs.Sub(webFiles, "web")
 	mux.Handle("GET /", http.FileServerFS(static))
@@ -70,6 +70,9 @@ func newWebServer(h *Hub, rm *Remote, out *Output) http.Handler {
 		}
 		as := autostartState()
 		st.Autostart = &as
+		if wp != nil && st.Whip != nil {
+			st.Whip.Program = wp.status()
+		}
 		return st
 	}
 	// answer is the reply to a change: the new state, or the reason why nothing changed.
@@ -208,6 +211,34 @@ func newWebServer(h *Hub, rm *Remote, out *Output) http.Handler {
 		}
 		writeJSON(w, map[string]bool{"ok": true})
 	}))
+	// WHIP input: its settings, and disconnecting the sender.
+	mux.HandleFunc("PUT /api/whip", sameOrigin(func(w http.ResponseWriter, r *http.Request) {
+		var in WhipUpdate
+		if !readBody(w, r, &in) {
+			return
+		}
+		// Which program the bridge starts is set on the bridge PC only (as for Bridge Output).
+		if isRemote(r) && in.Path != nil && strings.TrimSpace(*in.Path) != h.whipPath() {
+			answer(w, r, errors.New("the program path can only be changed on the bridge PC itself"))
+			return
+		}
+		restart, err := h.updateWhip(in)
+		if err == nil && restart && wp != nil {
+			wp.restart()
+		}
+		answer(w, r, err)
+	}))
+	mux.HandleFunc("POST /api/whip/disconnect", sameOrigin(func(w http.ResponseWriter, r *http.Request) {
+		if wp == nil {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		err := wp.disconnect()
+		if err == nil {
+			h.note("WHIP input: sender disconnected by hand")
+		}
+		answer(w, r, err)
+	}))
 	mux.HandleFunc("POST /api/places", sameOrigin(func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			ID string `json:"id"`
@@ -264,10 +295,10 @@ func newWebServer(h *Hub, rm *Remote, out *Output) http.Handler {
 		return rm.firewallPort()
 	}
 	mux.HandleFunc("GET /api/firewall", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, firewallState(h.portRange(), webPort()))
+		writeJSON(w, firewallState(h.portRange(), webPort(), h.whipFirewallPort()))
 	})
 	mux.HandleFunc("POST /api/firewall", sameOrigin(func(w http.ResponseWriter, r *http.Request) {
-		if err := requestFirewallRule(h.portRange(), webPort()); err != nil {
+		if err := requestFirewallRule(h.portRange(), webPort(), h.whipFirewallPort()); err != nil {
 			answer(w, r, err)
 			return
 		}

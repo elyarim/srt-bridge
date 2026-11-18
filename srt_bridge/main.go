@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const version = "0.4.2"
+const version = "0.5.2"
 
 func main() {
 	headless := flag.Bool("headless", false, "run without the window (the interface stays reachable in a browser)")
@@ -58,7 +58,8 @@ func main() {
 	// Remote access: the certificate sits next to config.json.
 	remote := newRemote(hub, filepath.Dir(configFile))
 	output := newOutput(hub)
-	web := newWebServer(hub, remote, output)
+	whip := newWhip(hub)
+	web := newWebServer(hub, remote, output, whip)
 	remote.inner = web
 	remote.sync()
 	go remote.loop()
@@ -69,6 +70,7 @@ func main() {
 	}()
 	// Bridge Output reads the bridge, so it is looked after once the interface answers.
 	go output.loop()
+	go whip.loop()
 
 	url := "http://" + webLn.Addr().String() + "/"
 	log.Printf("interface on %s", url)
@@ -76,6 +78,7 @@ func main() {
 		select {}
 	}
 	runWindow(url, hub)
+	whip.stop()
 	output.shutdown()
 	remote.stop()
 	hub.stop()

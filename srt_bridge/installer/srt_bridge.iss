@@ -61,6 +61,9 @@ Source: "payload\srt-bridge.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; SRT Bridge Output belongs to the bridge since 0.4.0: the bridge finds it in {app}\output
 ; and starts it from its tab «Outputs». Its settings go to %APPDATA%\SRTBridge as well.
 Source: "payload\output\*"; DestDir: "{app}\output"; Flags: ignoreversion
+; The WHIP input (since 0.5.0): srt-bridge-whip and its sound converter; the bridge
+; finds them in {app}\whip and starts them while WHIP is switched on in Setup.
+Source: "payload\whip\*"; DestDir: "{app}\whip"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"
@@ -76,10 +79,13 @@ Filename: "{app}\{#MyAppExe}"; Description: "{cm:StartNow}"; Flags: nowait posti
 ; Bridge Output and its decoders end before their files go.
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM srt-bridge-output.exe"; Flags: runhidden; RunOnceId: "KillOutput"
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM srt_bridge_decoder.exe"; Flags: runhidden; RunOnceId: "KillDecoder"
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM srt-bridge-whip.exe"; Flags: runhidden; RunOnceId: "KillWhip"
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM srt_bridge_aac.exe"; Flags: runhidden; RunOnceId: "KillWhipAac"
 ; «Start with Windows» of the user who uninstalls (set in the bridge under Setup).
 Filename: "{sys}\reg.exe"; Parameters: "delete ""HKCU\Software\Microsoft\Windows\CurrentVersion\Run"" /v ""SRT Bridge"" /f"; Flags: runhidden; RunOnceId: "DelAutostart"
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""SRT Bridge"""; Flags: runhidden; RunOnceId: "DelFirewallRule"
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""SRT Bridge (remote)"""; Flags: runhidden; RunOnceId: "DelFirewallRuleRemote"
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""SRT Bridge (WHIP)"""; Flags: runhidden; RunOnceId: "DelFirewallRuleWhip"
 
 ; The settings and the log in %APPDATA% / %LOCALAPPDATA% stay after uninstalling:
 ; they hold the signals, keys and passphrases, and a new installation picks them up again.

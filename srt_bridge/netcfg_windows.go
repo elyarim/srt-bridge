@@ -33,16 +33,21 @@ func system32(name string) string {
 // The second rule, for remote access: TCP on the number of the SRT port.
 const firewallRuleWeb = "SRT Bridge (remote)"
 
+// The third rule, for the WHIP input: TCP and UDP on its port.
+const firewallRuleWhip = "SRT Bridge (WHIP)"
+
 // FirewallState says whether devices in the network can reach the SRT port
-// and, with remote access on, the HTTPS port.
+// and, with remote access on, the HTTPS port, and with WHIP on, the WHIP port.
 type FirewallState struct {
-	Ports    string `json:"ports"`    // "21101" or "21101-21108"
-	Rule     bool   `json:"rule"`     // a rule with our name exists
-	Match    bool   `json:"match"`    // the rules open everything that is needed (UDP, and TCP if remote access is on)
-	UDPMatch bool   `json:"udpMatch"` // the SRT rule opens all of these ports for UDP (it may open more)
-	WebPort  int    `json:"webPort"`  // TCP port of remote access; 0 = remote access is off
-	WebMatch bool   `json:"webMatch"` // the rule for remote access opens it
-	Detail   string `json:"detail"`   // why the state could not be read
+	Ports     string `json:"ports"`     // "21101" or "21101-21108"
+	Rule      bool   `json:"rule"`      // a rule with our name exists
+	Match     bool   `json:"match"`     // the rules open everything that is needed (UDP, and TCP if remote access is on)
+	UDPMatch  bool   `json:"udpMatch"`  // the SRT rule opens all of these ports for UDP (it may open more)
+	WebPort   int    `json:"webPort"`   // TCP port of remote access; 0 = remote access is off
+	WebMatch  bool   `json:"webMatch"`  // the rule for remote access opens it
+	WhipPort  int    `json:"whipPort"`  // TCP and UDP port of the WHIP input; 0 = WHIP is off
+	WhipMatch bool   `json:"whipMatch"` // the WHIP rule opens it for TCP and UDP
+	Detail    string `json:"detail"`    // why the state could not be read
 }
 
 // showRule returns the output of netsh for one of our rules; nil = no such rule.
@@ -63,8 +68,8 @@ func showRule(name string) ([]byte, error) {
 // firewallState reads the rules. That needs no administrator rights. The
 // output of netsh is translated by Windows, so only the name (given by us),
 // the protocol and the port number are looked for.
-func firewallState(ports string, webPort int) FirewallState {
-	st := FirewallState{Ports: ports, WebPort: webPort}
+func firewallState(ports string, webPort, whipPort int) FirewallState {
+	st := FirewallState{Ports: ports, WebPort: webPort, WhipPort: whipPort}
 	out, err := showRule(firewallRule)
 	if err != nil {
 		st.Detail = err.Error()
@@ -80,7 +85,16 @@ func firewallState(ports string, webPort int) FirewallState {
 		}
 		st.WebMatch = web != nil && protocolTCP.Match(web) && ruleCovers(string(web), strconv.Itoa(webPort))
 	}
-	st.Match = st.UDPMatch && (webPort == 0 || st.WebMatch)
+	if whipPort > 0 {
+		// One rule cannot hold two protocols: netsh lists the two under the same name.
+		whip, err := showRule(firewallRuleWhip)
+		if err != nil {
+			st.Detail = err.Error()
+			return st
+		}
+		st.WhipMatch = whip != nil && protocolTCP.Match(whip) && protocolUDP.Match(whip) && ruleCovers(string(whip), strconv.Itoa(whipPort))
+	}
+	st.Match = st.UDPMatch && (webPort == 0 || st.WebMatch) && (whipPort == 0 || st.WhipMatch)
 	return st
 }
 
@@ -145,12 +159,18 @@ var (
 // firewallCommand is the line for cmd /c: both rules are deleted and set
 // again; the TCP rule for remote access only when it is on (webPort > 0),
 // so switching remote access off and setting the rule again closes TCP.
-func firewallCommand(netsh, ports string, webPort int) string {
-	cmd := fmt.Sprintf(`"%s" advfirewall firewall delete rule name="%s" & "%s" advfirewall firewall delete rule name="%s" & "%s" advfirewall firewall add rule name="%s" dir=in action=allow protocol=UDP localport=%s profile=any`,
-		netsh, firewallRule, netsh, firewallRuleWeb, netsh, firewallRule, ports)
+func firewallCommand(netsh, ports string, webPort, whipPort int) string {
+	cmd := fmt.Sprintf(`"%s" advfirewall firewall delete rule name="%s" & "%s" advfirewall firewall delete rule name="%s" & "%s" advfirewall firewall delete rule name="%s" & "%s" advfirewall firewall add rule name="%s" dir=in action=allow protocol=UDP localport=%s profile=any`,
+		netsh, firewallRule, netsh, firewallRuleWeb, netsh, firewallRuleWhip, netsh, firewallRule, ports)
 	if webPort > 0 {
 		cmd += fmt.Sprintf(` & "%s" advfirewall firewall add rule name="%s" dir=in action=allow protocol=TCP localport=%d profile=any`,
 			netsh, firewallRuleWeb, webPort)
+	}
+	if whipPort > 0 {
+		for _, proto := range []string{"TCP", "UDP"} {
+			cmd += fmt.Sprintf(` & "%s" advfirewall firewall add rule name="%s" dir=in action=allow protocol=%s localport=%d profile=any`,
+				netsh, firewallRuleWhip, proto, whipPort)
+		}
 	}
 	// The outer pair of quotes is needed: cmd /c strips the first and the last
 	// quote of a line with more than two, which broke the command without them.
@@ -160,8 +180,8 @@ func firewallCommand(netsh, ports string, webPort int) string {
 // requestFirewallRule asks Windows to set the rules. Windows shows its own
 // confirmation (administrator); the user decides there. The call returns as
 // soon as the confirmation is on screen or was refused.
-func requestFirewallRule(ports string, webPort int) error {
-	args := firewallCommand(system32("netsh.exe"), ports, webPort)
+func requestFirewallRule(ports string, webPort, whipPort int) error {
+	args := firewallCommand(system32("netsh.exe"), ports, webPort, whipPort)
 	verb, _ := syscall.UTF16PtrFromString("runas")
 	file, _ := syscall.UTF16PtrFromString(system32("cmd.exe"))
 	params, _ := syscall.UTF16PtrFromString(args)

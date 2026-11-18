@@ -93,6 +93,15 @@ async function change(method, path, body, okNote, errNote) {
 }
 
 const label = (p) => p.name || "Line " + p.slot;
+// The WHIP input in the matrix: a source number above every signal.
+const WHIP_SOURCE = 100;
+const whipOn = () => !!(state.whip && state.whip.enabled);
+const whipPlace = () => ({ slot: state.whip.slot, name: state.whip.name || "WHIP" });
+// The signal (or the WHIP input) a forward output gets; null = nothing.
+function srcOf(source) {
+  if (source === WHIP_SOURCE) return state.whip ? whipPlace() : null;
+  return source ? state.places[source - 1] || null : null;
+}
 // The stream ID receivers use for the forward output: the receiver key, or sender key*forward.
 const recvName = (p) => p.recvId || p.id + "*" + state.suffixes[0];
 // One port per signal: the port says which signal, stream IDs are not used.
@@ -143,6 +152,7 @@ function render(st) {
   renderAutostart();
   renderOutputs();
   renderKeys();
+  renderWhip();
   put($("logWhere"), "· newest first · log file " + state.logFile + " · settings " + state.configFile);
   if (!settingsLoaded) { fillSettings(); settingsLoaded = true; }
 }
@@ -155,6 +165,12 @@ function renderSide() {
     if (p.sender) inp += p.sender.mbps;
     for (const c of p.receivers.concat(p.forward)) { recv++; out += c.mbps; }
   }
+  let wUsed = 0, wLive = 0;
+  if (whipOn()) {
+    wUsed = 1;
+    if (state.whip.live) { wLive = 1; inp += state.whip.kbps / 1024; }
+    for (const c of state.whip.receivers) { recv++; out += c.mbps; }
+  }
   put($("sidePortLbl"), perSignal() ? "SRT ports" : "SRT port");
   put($("sidePort"), range(state.portRange));
   $("sidePort").title = "UDP " + range(state.portRange);
@@ -165,7 +181,7 @@ function renderSide() {
   put($("sideCpuProc"), sys.procCpu.toFixed(1) + " %");
   put($("sideRam"), sys.ramPct + " % of " + sys.ramGb.toFixed(0) + " GB");
   put($("sideRamProc"), sys.procMb.toFixed(0) + " MB");
-  put($("sideLive"), live + " of " + used);
+  put($("sideLive"), (live + wLive) + " of " + (used + wUsed));
   put($("sideRecv"), String(recv));
   put($("sideIn"), mbps(inp));
   put($("sideRate"), mbps(out));
@@ -185,9 +201,11 @@ function buildTile(slot) {
   t.lamp.append(t.lampText);
   t.sid = el("span", { class: "sid" });
   t.copyBtn = el("button", { type: "button", class: "sm mini", onclick: () => copy(perSignal() ? String(state.places[slot - 1].port) : state.places[slot - 1].id, t.copyBtn) }, "Copy");
-  t.links = el("button", { type: "button", class: "sm", onclick: () => openLinks(slot) }, "Links");
-  t.edit = el("button", { type: "button", class: "sm", onclick: () => openEdit(slot) }, "Edit");
-  t.disc = el("button", { type: "button", class: "sm", onclick: () => disconnect(slot) }, "Disconnect");
+  t.links = el("button", { type: "button", class: "sm narrow", onclick: () => openLinks(slot) }, "Links");
+  t.edit = el("button", { type: "button", class: "sm narrow", onclick: () => openEdit(slot) }, "Edit");
+  t.reset = el("button", { type: "button", class: "sm wide resetBtn", onclick: () => resetSignal(slot, t.reset) }, "Reset");
+  t.reset.title = "clears stream ID, name, passphrases and receiver key of this signal (click twice)";
+  t.power = el("button", { type: "button", class: "sm wide powerBtn", onclick: () => togglePower(slot) }, "✕ Off");
   t.root = el("div", { class: "tile" },
     el("div", { class: "tileHead" }, el("span", { class: "no" }, "# " + slot), t.name, t.lamp),
     el("div", { class: "idRow" }, t.sid, t.copyBtn),
@@ -203,28 +221,43 @@ function buildTile(slot) {
       el("div", { class: "sep" }),
       el("div", { class: "out" }, (t.origLbl = el("span", null, "original ")), (t.orig = el("b"))),
       el("div", { class: "out" }, (t.fwdLbl = el("span", null, "forward ")), (t.fwd = el("b")))),
-    el("div", { class: "tileActs" }, t.links, t.edit, t.disc));
+    el("div", { class: "tileActs" }, t.links, t.edit, t.reset, t.power));
   return t;
 }
 
+// The power button: on = «✕ Off» switches the signal off; off = «Switch on».
+function showPower(btn, off, can, what) {
+  put(btn, off ? "Switch on" : "✕ Off", "sm wide powerBtn" + (off ? " isOff" : ""));
+  btn.disabled = !can;
+  btn.title = off ? "switched off: every device of this " + what + " is turned away. Click to switch it on again"
+    : "switch this " + what + " off: its devices are disconnected and turned away while they keep calling";
+}
+
 function renderTiles() {
-  if (tiles.length !== state.places.length) {
+  const wOn = whipOn();
+  if (tiles.length !== state.places.length || drawn.whipTile !== wOn) {
     tiles = state.places.map((p) => buildTile(p.slot));
-    $("tiles").replaceChildren(...tiles.map((t) => t.root));
+    if (!whipTile) whipTile = buildWhipTile();
+    $("tiles").replaceChildren(...tiles.map((t) => t.root), ...(wOn ? [whipTile.root] : []));
+    $("tiles").classList.toggle("withWhip", wOn);
+    $("tiles").style.setProperty("--whipRows", String(Math.max(1, Math.ceil(state.places.length / 4))));
+    drawn.whipTile = wOn;
   }
+  if (wOn) fillWhipTile();
   for (const p of state.places) {
     const t = tiles[p.slot - 1], s = p.sender;
     const ps = perSignal(), used = inUse(p);
-    t.root.className = "tile" + (p.sender ? " live" : used ? "" : " free");
+    t.root.className = "tile" + (p.off ? " off" : p.sender ? " live" : used ? "" : " free");
     put(t.name, label(p));
     t.name.title = label(p);
-    put(t.lampText, s ? "LIVE" : used ? "WAITING" : "FREE");
-    t.lamp.className = "lamp" + (s ? " live" : used ? " wait" : "");
+    put(t.lampText, p.off ? "OFF" : s ? "LIVE" : used ? "WAITING" : "FREE");
+    t.lamp.className = "lamp" + (p.off ? " bad" : s ? " live" : used ? " wait" : "");
+    showPower(t.power, p.off, used || p.off, "signal");
+    if (!t.reset.dataset.armed) t.reset.disabled = !p.id && !p.name && !p.passIn;
     put(t.sid, ps ? "UDP " + p.port : p.id || "no stream ID", "sid" + (used ? "" : " none"));
     t.sid.title = ps ? "port of this signal, no stream ID needed" : p.id;
     t.copyBtn.title = ps ? "Copy the port" : "Copy the stream ID";
     t.copyBtn.disabled = t.links.disabled = !used;
-    t.disc.disabled = !s;
     put(t.rate, s ? kbps(s.mbps) : "–");
     const m = s && s.media;
     put(t.video, m ? [m.video, m.videoCodec].filter(Boolean).join(" · ") || "not known" : "–");
@@ -240,7 +273,7 @@ function renderTiles() {
     const e = signalError(p.slot);
     put(t.err, e ? e.short : "–", e ? "bad" : "");
     t.err.title = e ? e.reason + " · from " + e.addr + " · " + count(e.count, "try", "tries") : "";
-    const src = p.source ? state.places[p.source - 1] : null;
+    const src = srcOf(p.source);
     // With a port per signal there is one kind of receiver: whoever listens on the port gets the matrix output.
     const list = ps ? p.forward : p.receivers;
     let o = 0;
@@ -271,8 +304,24 @@ function signalError(slot) {
   return state.rejected.find((r) => r.slot === slot && r.short && now - r.time <= 10) || null;
 }
 
-async function disconnect(slot) {
-  await change("POST", "/api/disconnect", { slot }, ["mainNote", "input disconnected"], "mainErr");
+async function togglePower(slot) {
+  const p = state.places[slot - 1];
+  await change("PUT", "/api/places", { slot, off: !p.off }, ["mainNote", p.off ? "signal #" + slot + " on" : "signal #" + slot + " off"], "mainErr");
+}
+
+// Reset needs two clicks on the same button (no dialog: a dialog can be suppressed,
+// then nothing would happen). The first click arms it for 3 seconds.
+async function resetSignal(slot, btn) {
+  if (!btn.dataset.armed) {
+    btn.dataset.armed = "1";
+    put(btn, "Sure? Reset", "sm wide resetBtn armed");
+    btn.disabled = false;
+    setTimeout(() => { delete btn.dataset.armed; put(btn, "Reset", "sm wide resetBtn"); }, 3000);
+    return;
+  }
+  delete btn.dataset.armed;
+  put(btn, "Reset", "sm wide resetBtn");
+  await change("PUT", "/api/places", { slot, id: "", name: "", passIn: "", off: false }, ["mainNote", "signal #" + slot + " reset"], "mainErr");
 }
 
 // ---- generated keys: the settings live on this computer (browser storage of the window), not in config.json ----
@@ -399,17 +448,21 @@ newKey("rxKey", "rxErr");
 // ---- matrix: always all signals ----
 function renderMatrix() {
   const view = state.places.map((p) => [p.id, p.name, p.source, !!p.sender, p.forward.length]);
-  if (!changed("mx", [view, state.suffixes[0], state.portMode, state.srtPort])) return;
+  const wView = whipOn() ? [state.whip.name, state.whip.live, state.whip.id] : null;
+  if (!changed("mx", [view, wView, state.suffixes[0], state.portMode, state.srtPort])) return;
   const ps = perSignal(), outWord = ps ? "output" : "forward output";
   put($("mxSub"), "· row = " + outWord + ", column = input · one input per row");
   put($("mxLeg"), "Set the matrix before the show. Changing a crosspoint reconnects the receivers of that " + outWord + ". «all ↓» gives one input to every " + outWord + "."
     + (ps ? " A row is what a device gets when it listens on the port of that signal." : " A row is fetched with the stream ID of that signal plus *" + state.suffixes[0] + "."));
+  // The columns: every signal, and the WHIP input after them when it is on.
+  const inputs = state.places.map((p) => ({ src: p.slot, p, live: !!p.sender, st: p.sender ? "LIVE" : inUse(p) ? "no input" : "free", where: ps ? "UDP " + p.port : p.id }));
+  if (whipOn()) inputs.push({ src: WHIP_SOURCE, p: whipPlace(), live: state.whip.live, st: state.whip.live ? "LIVE" : "no input", where: "WHIP", whip: true });
   const head = el("tr", null, el("th", { class: "corner" }, outWord + " ↓  ·  input →"));
-  for (const p of state.places) {
-    const where = ps ? "UDP " + p.port : p.id;
-    head.append(el("th", { class: p.sender ? "live" : "", title: label(p) + (where ? " · " + where : "") },
-      el("span", { class: "no" }, "#" + p.slot), label(p), el("span", { class: "st" }, p.sender ? "LIVE" : inUse(p) ? "no input" : "free"),
-      el("button", { type: "button", class: "allBtn", title: "give #" + p.slot + " " + label(p) + " to every " + outWord, onclick: () => setColumn(p.slot) }, "all ↓")));
+  for (const inp of inputs) {
+    const p = inp.p;
+    head.append(el("th", { class: (inp.live ? "live" : "") + (inp.whip ? " whipCol" : ""), title: label(p) + (inp.where ? " · " + inp.where : "") },
+      el("span", { class: "no" }, "#" + p.slot), label(p), el("span", { class: "st" }, inp.st),
+      el("button", { type: "button", class: "allBtn", title: "give #" + p.slot + " " + label(p) + " to every " + outWord, onclick: () => setColumn(inp.src) }, "all ↓")));
   }
   const body = el("tbody");
   for (const out of state.places) {
@@ -418,13 +471,13 @@ function renderMatrix() {
     const tr = el("tr", null, el("th", { class: n ? "live" : "", title: addr },
       el("span", { class: "no" }, "#" + out.slot), label(out),
       el("span", { class: "st" }, addr ? addr + (n ? " · " + count(n, "receiver", "receivers") : "") : "free")));
-    for (const inp of state.places) {
-      const on = out.source === inp.slot;
-      tr.append(el("td", { class: out.slot === inp.slot ? "self" : "" }, el("button", {
+    for (const inp of inputs) {
+      const on = out.source === inp.src;
+      tr.append(el("td", { class: out.slot === inp.src ? "self" : inp.whip ? "whipCol" : "" }, el("button", {
         type: "button", class: "cell" + (on ? " on" : ""),
         "aria-pressed": on ? "true" : "false",
-        title: (ps ? "output" : "forward") + " of #" + out.slot + " " + label(out) + (on ? " gets #" : " ← #") + inp.slot + " " + label(inp),
-        onclick: () => setSource(out, on ? 0 : inp.slot),
+        title: (ps ? "output" : "forward") + " of #" + out.slot + " " + label(out) + (on ? " gets #" : " ← #") + inp.p.slot + " " + label(inp.p),
+        onclick: () => setSource(out, on ? 0 : inp.src),
       }, on ? "●" : "")));
     }
     body.append(tr);
@@ -475,7 +528,7 @@ function renderReceivers() {
     const cells = [0, 1, 2, 3, 4, 5].map(() => el("td", { class: "num" }));
     recvCells.set(c.id, cells);
     fill(c, cells);
-    const src = kind === "forward" && p.source ? state.places[p.source - 1] : null;
+    const src = kind === "forward" ? srcOf(p.source) : null;
     body.append(el("tr", null,
       el("td", null, el("span", { class: "pid" }, "#" + p.slot + " " + label(p)), el("span", { class: "sub" }, ps ? "UDP " + p.port : kind === "forward" ? recvName(p) : p.id)),
       el("td", null, kind === "forward" ? (ps ? "" : "forward: ") + (src ? "#" + src.slot + " " + label(src) : "not assigned") : "original"),
@@ -568,12 +621,13 @@ async function checkFirewall() {
   if (document.querySelector('section[data-page="setup"]').hidden) return;
   try {
     const f = await api("GET", "/api/firewall");
-    const ports = "UDP " + range(f.ports) + (f.webPort ? " and TCP " + f.webPort : "");
+    const ports = "UDP " + range(f.ports) + (f.webPort ? " and TCP " + f.webPort : "") + (f.whipPort ? ", WHIP TCP/UDP " + f.whipPort : "");
     // The same state twice: in the card «Internet access» and next to the port in the card «SRT».
     for (const n of ["", "2"]) {
       const lamp = $("fwLamp" + n), text = $("fwText" + n);
       if (f.match) { lamp.className = "lamp live"; put(text, "OPEN: rules for " + ports + " in place"); }
-      else if (f.udpMatch && f.webPort) { lamp.className = "lamp wait"; put(text, "TCP " + f.webPort + " for remote access not open yet: set the rule again"); }
+      else if (f.udpMatch && f.webPort && !f.webMatch) { lamp.className = "lamp wait"; put(text, "TCP " + f.webPort + " for remote access not open yet: set the rule again"); }
+      else if (f.udpMatch && f.whipPort && !f.whipMatch) { lamp.className = "lamp wait"; put(text, "WHIP port " + f.whipPort + " (TCP and UDP) not open yet: set the rule again"); }
       else if (f.rule) { lamp.className = "lamp wait"; put(text, "OTHER PORTS: rule does not open UDP " + range(f.ports)); }
       else if (f.detail) { lamp.className = "lamp"; put(text, "could not be read: " + f.detail); }
       else { lamp.className = "lamp bad"; put(text, "CLOSED: no rule for " + ports); }
@@ -603,8 +657,9 @@ setInterval(checkFirewall, 3000);
 function renderNet() {
   const ps = perSignal(), ports = "UDP " + range(state.portRange);
   const web = state.remote && state.remote.enabled;
-  put($("fwdPort"), ports + (web ? " and TCP " + state.srtPort : ""));
-  put($("fwdOnly"), web ? "TCP " + state.srtPort + " is for remote access." : "Only UDP is needed.");
+  const wp = whipOn() ? state.whip.port : 0;
+  put($("fwdPort"), ports + (web ? " and TCP " + state.srtPort : "") + (wp ? ", TCP and UDP " + wp : ""));
+  put($("fwdOnly"), [web ? "TCP " + state.srtPort + " is for remote access." : "", wp ? "TCP and UDP " + wp + " are for the WHIP input." : "", !web && !wp ? "Only UDP is needed." : ""].filter(Boolean).join(" "));
   put($("fwdHost"), (state.addresses.length ? state.addresses.join(" or ") : "its local address") + (ps ? ", same ports " : ", port ") + range(state.portRange));
   put($("fwHelp"), ps
     ? "Opens " + ports + " for incoming connections, one port per signal. Windows asks for confirmation as administrator. After a new first port or number of signals, add the rule again."
@@ -659,6 +714,7 @@ function openLinks(slot) {
 }
 
 function drawLinks() {
+  if (whipOn() && linkSlot === state.whip.slot) return drawWhipLinks();
   const p = state.places[linkSlot - 1];
   if (!p || !inUse(p)) return;
   $("linkTitle").textContent = "Links for #" + p.slot + " " + label(p);
@@ -668,7 +724,7 @@ function drawLinks() {
   if (perSignal()) {
     // The port is the address of the signal: one link for sending and for receiving, no stream ID.
     const u = "srt://" + host + "?latency=" + state.latencyMs + (p.passIn ? "&passphrase=" + encodeURIComponent(p.passIn) : "");
-    const src = p.source ? state.places[p.source - 1] : null;
+    const src = srcOf(p.source);
     rows = [
       ["Send to this signal (caller, no stream ID)", u],
       ["Receive on this port (caller, same address): what the matrix assigns, now " + (src ? "#" + src.slot + " " + label(src) : "nothing"), u],
@@ -689,6 +745,10 @@ function drawLinks() {
       ["Haivision Play: forward output", play(fwd)],
     ];
   }
+  showLinkRows(rows);
+}
+
+function showLinkRows(rows) {
   $("linkList").replaceChildren(...rows.map(([what, link]) => {
     const btn = el("button", { type: "button", class: "sm" }, "Copy");
     btn.addEventListener("click", () => copy(link, btn));
@@ -970,6 +1030,160 @@ $("editForm").addEventListener("submit", async (ev) => {
 });
 
 for (const b of document.querySelectorAll("[data-close]")) b.addEventListener("click", () => b.closest("dialog").close());
+
+// ---- WHIP input: the tile after the last signal, its links, and its card in Setup ----
+let whipTile = null;
+function buildWhipTile() {
+  const t = {};
+  const dd = (key, cls) => (t[key] = el("dd", { class: cls || "" }, "–"));
+  t.no = el("span", { class: "no" }, "#");
+  t.name = el("span", { class: "name" });
+  t.lamp = el("span", { class: "lamp" }, el("i"));
+  t.lampText = el("span");
+  t.lamp.append(t.lampText);
+  t.sid = el("span", { class: "sid" });
+  t.copyBtn = el("button", { type: "button", class: "sm mini", title: "Copy the stream ID for receivers", onclick: () => copy(state.whip.id, t.copyBtn) }, "Copy");
+  t.links = el("button", { type: "button", class: "sm narrow", onclick: () => openLinks(state.whip.slot) }, "Links");
+  t.edit = el("button", { type: "button", class: "sm narrow", title: "WHIP settings in Setup", onclick: () => document.querySelector('#nav [data-go="setup"]').click() }, "Setup");
+  t.disc = el("button", { type: "button", class: "sm wide", title: "closes the WHIP connection; the sender may connect again at once", onclick: () => change("POST", "/api/whip/disconnect", {}, ["mainNote", "WHIP sender disconnected"], "mainErr") }, "Disconnect");
+  t.power = el("button", { type: "button", class: "sm wide powerBtn", onclick: () => change("PUT", "/api/whip", { off: !state.whip.off }, ["mainNote", state.whip.off ? "WHIP signal on" : "WHIP signal off"], "mainErr") }, "✕ Off");
+  t.root = el("div", { class: "tile whip" },
+    el("div", { class: "tileHead" }, t.no, t.name, t.lamp),
+    el("div", { class: "idRow" }, t.sid, t.copyBtn),
+    el("dl", { class: "stats" },
+      el("dt", null, "bitrate"), dd("rate", "big"),
+      el("dt", null, "video"), dd("video"),
+      el("dt", null, "audio"), dd("audio"),
+      el("dt", null, "lost · held"), dd("loss"),
+      el("dt", null, "sound delay"), dd("delay"),
+      el("dt", null, "on air"), dd("air"),
+      el("dt", null, "from"), dd("from"),
+      el("dt", null, "error"), dd("err"),
+      el("div", { class: "sep" }),
+      el("div", { class: "out" }, el("span", null, "original out "), (t.orig = el("b"))),
+      el("div", { class: "out" }, el("span", null, "in the matrix "), (t.fwd = el("b")))),
+    el("div", { class: "tileActs" }, t.links, t.edit, t.disc, t.power));
+  return t;
+}
+
+// The program's own state (srt-bridge-whip); {} while it does not answer.
+const whipProg = () => (state.whip.program && state.whip.program.state) || {};
+
+function whipError() {
+  const w = state.whip, pr = w.program || {}, ps = whipProg();
+  if (!pr.found) return "srt-bridge-whip.exe not found";
+  if (pr.error) return pr.error;
+  if (ps.error) return ps.error;
+  if (ps.soundError) return "no sound: " + ps.soundError;
+  if (!w.key) return "no WHIP key set: every sender is turned away";
+  const e = signalError(w.slot);
+  return e ? e.short : "";
+}
+
+function fillWhipTile() {
+  const t = whipTile, w = state.whip, ps = whipProg(), live = w.live;
+  const sender = !!ps.live;
+  t.root.className = "tile whip" + (w.off ? " off" : live ? " live" : "");
+  put(t.no, "# " + w.slot);
+  put(t.name, whipPlace().name);
+  t.name.title = "WHIP input · " + whipPlace().name;
+  put(t.lampText, w.off ? "OFF" : live ? "LIVE" : sender ? "STARTING" : "WAITING");
+  t.lamp.className = "lamp" + (w.off ? " bad" : live ? " live" : " wait");
+  showPower(t.power, w.off, true, "WHIP signal");
+  put(t.sid, w.id || "no stream ID", "sid" + (w.id ? "" : " none"));
+  t.sid.title = "stream ID for receivers (SRT); the sender uses WHIP on port " + w.port;
+  t.disc.disabled = !sender;
+  put(t.rate, live ? Math.round(w.kbps) + " kbit/s" : "–");
+  const m = live && w.media;
+  put(t.video, m ? [m.video, m.videoCodec].filter(Boolean).join(" · ") || "not known" : sender && ps.video ? ps.video : "–");
+  put(t.audio, m ? audioText(m) + " (from Opus)" : sender && ps.audio ? ps.audio : "–");
+  // Lost: video packets not repaired in time. Held: pictures not passed on (broken, or waiting for a keyframe).
+  put(t.loss, sender ? (ps.lost || 0) + " · " + (ps.dropped || 0) : "–", sender && ps.lost ? "warn" : "");
+  t.loss.title = sender ? "video packets lost for good: " + (ps.lost || 0) + " · pictures held back: " + (ps.dropped || 0) + " · keyframes asked for: " + (ps.keyRequests || 0) + " · sound packets lost: " + (ps.audioLost || 0) : "";
+  put(t.delay, sender && ps.delayMs ? ps.delayMs + " ms" : "–");
+  t.delay.title = "time between the decoder clock and the pictures: the AAC sound needs it (Opus decode, AAC frame, AAC encoder delay)";
+  put(t.air, sender && ps.since ? since(ps.since) + (ps.sessions > 1 ? " · " + count(ps.sessions - 1, "restart", "restarts") : "") : "–");
+  put(t.from, sender ? ps.client : "–");
+  const e = whipError();
+  put(t.err, e || "–", e ? "bad" : "");
+  t.err.title = e;
+  let o = 0;
+  for (const c of w.receivers) o += c.mbps;
+  put(t.orig, w.receivers.length ? count(w.receivers.length, "device fetches", "devices fetch") + " it · " + mbps(o) : perSignal() ? "only over the matrix (port per signal)" : "nobody fetches it");
+  put(t.fwd, w.forward.length ? "out on " + w.forward.map((n) => "#" + n).join(", ") : "not assigned");
+  t.fwd.parentNode.title = "forward outputs that get the WHIP input (Matrix)";
+}
+
+// The WHIP address for a sender, with the host chosen in the Links window.
+const whipUrl = (host) => "http://" + host + ":" + state.whip.port + "/whip";
+
+function drawWhipLinks() {
+  const w = state.whip;
+  const name = whipPlace().name;
+  $("linkTitle").textContent = "Links for #" + w.slot + " " + name + (name === "WHIP" ? "" : " (WHIP)");
+  const addr = $("linkAddr").value;
+  const rows = [
+    ["WHIP sender (OBS: Service «WHIP», Server = this address, Bearer Token = the key below)", whipUrl(addr)],
+    ["WHIP key (bearer token)", w.key || "(no key set)"],
+  ];
+  if (!perSignal() && w.id) {
+    const u = "srt://" + addr + ":" + state.srtPort + "?streamid=" + encodeURIComponent(w.id) + "&latency=" + state.latencyMs + (w.pass ? "&passphrase=" + encodeURIComponent(w.pass) : "");
+    rows.push(["Receive this signal (SRT caller)", u]);
+    rows.push(["Haivision Play: receive", "https://play.haivision.com/play?url=" + encodeURIComponent(u.replace("streamid=", "StreamID=").replace("latency=", "Latency="))]);
+  }
+  showLinkRows(rows);
+}
+
+// Setup card. The form is filled once, and again after a save, so typing is never overwritten.
+let whipFilled = false;
+function fillWhipForm() {
+  const w = state.whip;
+  $("whOn").checked = w.enabled;
+  $("whPort").value = w.port;
+  $("whBitrate").value = String(w.aacBitrate);
+  $("whKey").value = w.key;
+  $("whId").value = w.id;
+  $("whPass").value = w.pass;
+  $("whName").value = w.name;
+  whipFilled = true;
+}
+
+function renderWhip() {
+  if (!state.whip) return;
+  if (!whipFilled) fillWhipForm();
+  const w = state.whip, pr = w.program || {}, ps = whipProg();
+  const lamp = $("whLamp"), text = $("whText");
+  if (!w.enabled) { lamp.className = "lamp"; put(text, "OFF"); }
+  else if (!pr.found) { lamp.className = "lamp bad"; put(text, "srt-bridge-whip.exe not found next to the bridge"); }
+  else if (pr.error && !pr.running) { lamp.className = "lamp bad"; put(text, pr.error); }
+  else if (!pr.running) { lamp.className = "lamp wait"; put(text, "STARTING"); }
+  else if (w.live) { lamp.className = "lamp live"; put(text, "LIVE: " + (ps.client || "sender") + " sends · " + Math.round(w.kbps) + " kbit/s"); }
+  else if (ps.live) { lamp.className = "lamp wait"; put(text, "CONNECTED: " + ps.client + ", waiting for the first keyframe"); }
+  else { lamp.className = "lamp wait"; put(text, "READY: waiting for a WHIP sender on port " + w.port); }
+  const host = state.publicIp || state.addresses[0] || "address-of-this-pc";
+  put($("whOnLbl"), "WHIP input on (signal #" + w.slot + " on Main, after the last signal)");
+  put($("whHelp"), "Senders use " + whipUrl(host) + " with the WHIP key as bearer token. "
+    + "Open TCP and UDP " + w.port + " in the firewall (Set firewall rule in SRT) and forward both in the router. "
+    + "The picture is passed on unchanged (H.264 or H.265); the sound becomes AAC, which needs about 90 ms: the stream is timed for it. "
+    + (perSignal() ? "With a port per signal, receivers get the WHIP input over the matrix only." : "Receivers fetch it with the stream ID, forward outputs through the Matrix."));
+}
+
+$("whKeyNew").addEventListener("click", () => { try { $("whKey").value = randomKey({ ...keySettings(), len: Math.max(24, keySettings().len) }); } catch (e) { note("whErr", e.message); } });
+$("whIdNew").addEventListener("click", () => { try { $("whId").value = randomKey(keySettings()); } catch (e) { note("whErr", e.message); } });
+$("whKeyCopy").addEventListener("click", () => copy($("whKey").value, $("whKeyCopy")));
+$("whIdCopy").addEventListener("click", () => copy($("whId").value, $("whIdCopy")));
+$("whForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const on = $("whOn").checked;
+  // Switching on for the first time: a stream ID and a key are made, so it works at once.
+  if (on && !$("whId").value.trim()) $("whId").value = randomKey(keySettings());
+  if (on && !$("whKey").value.trim()) $("whKey").value = randomKey({ ...keySettings(), len: Math.max(24, keySettings().len) });
+  const ok = await change("PUT", "/api/whip", {
+    enabled: on, port: Number($("whPort").value), aacBitrate: Number($("whBitrate").value),
+    key: $("whKey").value.trim(), id: $("whId").value.trim(), pass: $("whPass").value, name: $("whName").value.trim(),
+  }, ["whNote", "saved"], "whErr");
+  if (ok) { fillWhipForm(); checkFirewall(); }
+});
 
 // ---- pages, clock, polling ----
 $("nav").addEventListener("click", (ev) => {

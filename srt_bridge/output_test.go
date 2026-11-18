@@ -50,7 +50,7 @@ func TestOutputProxy(t *testing.T) {
 	cfg.OutputAddr = strings.TrimPrefix(srv.URL, "http://")
 	h := newHub(cfg, filepath.Join(t.TempDir(), "config.json"))
 	out := newOutput(h)
-	web := newWebServer(h, nil, out)
+	web := newWebServer(h, nil, out, nil)
 	out.poll()
 
 	do := func(method, path, body string) (int, map[string]any) {

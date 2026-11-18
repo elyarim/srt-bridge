@@ -12,11 +12,25 @@ SRT Bridge is a meeting point on the internet for SRT signals. The encoder at th
 
 Install this Bridge in your studio on a mid-range computer (Windows 10/11) with an Intel Core i7-6700. Of course, a newer computer will work as well. With this setup, you can easily transmit 8 video signals and optional output 4 of them locally as OMT. If you want to output more signals from the bridge computer, you’ll need a more modern machine: recommended; Intel Core Ultra 200S series desktop CPUs (Arrow Lake) with at least six performance cores and integrated Intel Graphics with hardware AV1 encoding support can be used. Suitable models include the Intel Core Ultra 5 245K, Intel Core Ultra 7 265K, and Intel Core Ultra 9 285K.
 
-The bridge passes the packets on unchanged. Nothing is decoded or encoded again, so the picture quality stays as it was sent and the delay is only the SRT latency on each leg.
+For SRT inputs, the bridge passes the packets on unchanged. Nothing is decoded or encoded again, so the picture quality stays as it was sent and the delay is only the SRT latency on each leg.
 
 ![SRT Bridge Main window showing one live input, three waiting inputs and four free slots](docs/main.png)
 
 During installation, 8 channels are configured; you can adjust this number as desired in the setup.
+
+## WHIP input and channel controls in 0.5.2
+
+Enable **WHIP input** in **Setup** to add one input after the configured SRT channels. With eight channels, WHIP appears as the ninth tile. Enter the bridge's WHIP URL and bearer token in the sender.
+
+| Connection | Default port | Purpose |
+| --- | --- | --- |
+| WHIP sender to bridge | 21102/TCP | WHIP signaling |
+| WHIP sender to bridge | 21102/UDP | Incoming WebRTC media |
+| Bridge to SRT receiver | 21101/UDP | SRT playback on the usual SRT port |
+
+For internet ingest behind a router, forward both TCP and UDP on the configured WHIP port to the bridge PC. SRT receivers still call the usual SRT address. They can receive the WHIP input by its stream ID or use an existing forward output assigned to **WHIP** in **Matrix**.
+
+The channel tiles now group the controls for each signal. Choose **Off** to disconnect the channel and block reconnections. Choose **Switch on** to accept connections again.
 
 Physical limits
 The number of channels is not the limit; the total data rate is. In single-port mode, all receivers together share one UDP port. On the development laptop, this port delivered about 800 Mbit/s of outgoing data in total. Every receiver counts separately: a 10 Mbit/s signal fetched by 5 receivers uses 50 Mbit/s.
@@ -46,9 +60,10 @@ Run these PowerShell commands from the repository root on Windows x64.
 | --- | --- | --- |
 | SRT Bridge | `.\srt_bridge\build.ps1` | Go 1.27.2 or compatible |
 | SRT Bridge Output | `.\srt_bridge_output\build.ps1` | Go, Visual Studio 18 Community with the x64 C++ tools, Blackmagic Desktop Video |
-| Combined installer | `.\srt_bridge\installer\build-setup.ps1` | Requirements for both components, plus Inno Setup 6 or 7 |
+| SRT Bridge WHIP | `.\srt_bridge_whip\build.ps1` | Go, Visual Studio 18 Community with the x64 C++ tools and CMake |
+| Combined installer | `.\srt_bridge\installer\build-setup.ps1` | Requirements for all three components, plus Inno Setup 6 or 7 |
 
-The installer script builds both components and writes the setup executable and its SHA-256 checksum to `srt_bridge/dist/`.
+The installer script builds all three components and writes the setup executable and its SHA-256 checksum to `srt_bridge/dist/`.
 
 ## License
 

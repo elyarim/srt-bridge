@@ -199,11 +199,50 @@
           </label>
           <label><span id="setAcceptLbl">Unknown stream IDs</span>
             <select id="setAccept">
-              <option value="any">Every stream ID: an unknown ID takes the next free signal</option>
               <option value="listed">Only the stream IDs set here: unknown IDs are turned away</option>
+              <option value="any">Every stream ID: an unknown ID takes the next free signal</option>
             </select>
           </label>
           <p class="dim small" id="setHelp"></p>
+          <div class="row end"><button type="submit" class="primary">Save</button></div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="cardHead"><h2>WHIP input <small class="dim">· one more signal, from OBS, a browser or FastVideo Bridge</small><span id="whNote" class="titleNote"></span><span id="whErr" class="titleNote err"></span></h2></div>
+        <div class="stepRow whState">
+          <span class="lamp" id="whLamp"><i></i><span id="whText">–</span></span>
+        </div>
+        <form id="whForm">
+          <label class="check"><input type="checkbox" id="whOn"><span id="whOnLbl">WHIP input on</span></label>
+          <div class="fields2">
+            <label>Port (TCP for WHIP, UDP for the media)
+              <input id="whPort" type="number" min="1024" max="65535" required>
+            </label>
+            <label>Sound (Opus from the sender becomes AAC)
+              <select id="whBitrate">
+                <option value="128000">AAC stereo 128 kbit/s</option>
+                <option value="192000">AAC stereo 192 kbit/s</option>
+                <option value="256000">AAC stereo 256 kbit/s</option>
+                <option value="320000">AAC stereo 320 kbit/s</option>
+              </select>
+            </label>
+          </div>
+          <label>WHIP key (bearer token the sender needs)
+            <div class="whKeyRow"><input id="whKey" autocomplete="off" spellcheck="false" maxlength="200"><button type="button" id="whKeyNew">New key</button><button type="button" id="whKeyCopy">Copy</button></div>
+          </label>
+          <label>Stream ID for receivers (SRT)
+            <div class="whKeyRow"><input id="whId" autocomplete="off" spellcheck="false" maxlength="480"><button type="button" id="whIdNew">New key</button><button type="button" id="whIdCopy">Copy</button></div>
+          </label>
+          <div class="fields2">
+            <label>Passphrase for receivers (empty = none)
+              <input id="whPass" autocomplete="off" spellcheck="false" maxlength="79">
+            </label>
+            <label>Name on the tile
+              <input id="whName" placeholder="WHIP" maxlength="40" autocomplete="off">
+            </label>
+          </div>
+          <p class="dim small" id="whHelp"></p>
           <div class="row end"><button type="submit" class="primary">Save</button></div>
         </form>
       </div>
@@ -288,7 +327,7 @@
           </ol>
           <h3>Keys</h3>
           <ul>
-            <li><b>Sender key</b>: the stream ID the sender uses. An unknown key takes the next free signal (Setup can turn unknown keys away instead).</li>
+            <li><b>Sender key</b>: the stream ID the sender uses. An unknown key is turned away and listed under «Turned away», where one click gives it a free signal (Setup can let unknown keys take the next free signal instead).</li>
             <li><b>Receiver key</b> (optional, page Generate key): its own stream ID for the receivers. Then they do not need to know the sender key, and <code>sender key*forward</code> no longer works.</li>
             <li><b>Original</b>: whoever knows the sender key can also receive the signal unchanged with it. On the Generate key page this can be switched off; then the sender key only sends.</li>
             <li><b>Passphrase</b> (Edit window): encrypts the connection, separately for the sender side and for the forward output. 10 to 79 characters, empty = none.</li>
@@ -300,7 +339,9 @@
         <div class="card help">
           <h2>The tiles</h2>
           <dl class="helpList">
-            <dt>LIVE · WAITING · FREE</dt><dd>an input delivers data · a key is set but nothing comes in · no key</dd>
+            <dt>LIVE · WAITING · FREE · OFF</dt><dd>an input delivers data · a key is set but nothing comes in · no key · switched off (red tile)</dd>
+            <dt>✕ Off · Switch on</dt><dd>switches the signal off: its sender and receivers are disconnected and turned away while they keep calling (a plain disconnect would not help: SRT devices call again at once). «Switch on» lets them in again</dd>
+            <dt>Reset</dt><dd>click twice: clears stream ID, name, passphrases and receiver key; the signal is free again. The matrix stays as it is</dd>
             <dt>bitrate</dt><dd>what the input delivers now</dd>
             <dt>video · audio</dt><dd>TV norm and codec, audio channels of all tracks together, read from the signal</dd>
             <dt>loss · drops</dt><dd>in the last minute, so errors at the start go away by themselves; the totals since connecting are in the tooltip. Loss: lost on the way and sent again by SRT, nothing is missing. Drops: did not arrive in time, really missing in the picture</dd>
@@ -322,6 +363,14 @@
             <li><b>Latency</b>: the lowest value the bridge accepts; a device that asks for more gets more.</li>
             <li><b>Set firewall rule</b> (next to the port): after a new port, this opens it in the Windows Firewall. Windows asks for confirmation as administrator.</li>
             <li><b>Internet access</b>: Windows Firewall rule, port forwarding (UDP only) in the router, public IP for the links.</li>
+          </ul>
+          <h2>WHIP input</h2>
+          <ul>
+            <li>Switched on in Setup, it is one more signal after the last one, shown to the right of the tiles. A WHIP sender (OBS, a browser, FastVideo Bridge) publishes to <code>http://&lt;this PC&gt;:21102/whip</code> with the WHIP key as bearer token. One sender at a time; a new one takes over.</li>
+            <li>The picture (H.264 or H.265) is passed on unchanged. The sound comes as Opus, which many SRT receivers (vMix, Bridge Output) cannot play; it becomes AAC. That needs about 90–110 ms, shown as «sound delay»: the stream is timed so picture and sound stay together.</li>
+            <li>Receivers fetch it with its stream ID; forward outputs get it through the Matrix (column WHIP). It has no forward output of its own.</li>
+            <li>Port: TCP (WHIP) and UDP (media) on the same number. Open both in the firewall (Set firewall rule) and forward both in the router.</li>
+            <li>lost · held: video packets lost for good · pictures held back until the next keyframe, so a broken picture is never passed on. A new receiver asks the sender for a keyframe.</li>
           </ul>
           <h2>SRT version</h2>
           <p>The bridge does not use the SRT library of Haivision (libsrt, today version 1.5.x) but <b>gosrt</b> 0.13.0 by datarhei, an SRT implementation written in Go. gosrt speaks the SRT protocol of version <b>1.4.1</b>; that is the number shown at the top.</p>

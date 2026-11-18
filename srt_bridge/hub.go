@@ -225,6 +225,7 @@ type Hub struct {
 	closed   bool // the bridge is ending: do not open the port again
 	nextID   uint64
 	tapConn  *net.UDPConn // sends the taps; nil if it could not be opened
+	whip     whipInput    // the WHIP signal (whip.go)
 }
 
 func newHub(cfg *Config, cfgPath string) *Hub {
@@ -233,6 +234,7 @@ func newHub(cfg *Config, cfgPath string) *Hub {
 	for range cfg.Places {
 		h.rt = append(h.rt, newPlaceRT())
 	}
+	h.openWhipInput()
 	return h
 }
 
@@ -451,6 +453,10 @@ func (h *Hub) handlePortLocked(req srt.ConnRequest, i int) {
 		return
 	}
 	label := h.cfg.signalLabel(i)
+	if h.cfg.Places[i].Off {
+		h.rejectSlotLocked(req, srt.REJ_PEER, "the signal is switched off", false, i+1, "signal is switched off")
+		return
+	}
 	if !h.passLocked(req, h.cfg.Places[i].PassIn, label+": ", i, "") {
 		return
 	}
@@ -484,6 +490,10 @@ func (h *Hub) handle(req srt.ConnRequest, slot int) {
 	id, forward := splitStreamID(req.StreamId(), h.cfg.Suffixes)
 	if why := checkPlaceID(id, h.cfg.Suffixes); why != "" {
 		h.rejectLocked(req, srt.REJ_PEER, why, false)
+		return
+	}
+	if h.cfg.whipOn() && id == h.cfg.Whip.ID {
+		h.handleWhipLocked(req, forward)
 		return
 	}
 	i := h.cfg.slot(id)
@@ -525,6 +535,11 @@ func (h *Hub) handle(req srt.ConnRequest, slot int) {
 	}
 	var p *Place
 	pass, part := "", ""
+	if !pending && h.cfg.Places[i].Off {
+		// Switched off on its tile: sender, original and forward are all turned away.
+		h.rejectSlotLocked(req, srt.REJ_PEER, "the signal is switched off", false, i+1, "signal is switched off")
+		return
+	}
 	if !pending {
 		p = h.cfg.Places[i]
 		pass = p.PassIn
@@ -593,7 +608,17 @@ func (h *Hub) rebuildLocked() {
 			lists[i] = append(lists[i], c)
 		}
 	}
+	whip := []*conn{}
+	for c := range h.whip.rt.subs {
+		whip = append(whip, c)
+	}
 	for i, p := range h.cfg.Places {
+		if p.Source == whipSource {
+			for c := range h.rt[i].fwd {
+				whip = append(whip, c)
+			}
+			continue
+		}
 		if p.Source < 1 || p.Source > len(h.rt) {
 			continue
 		}
@@ -608,6 +633,12 @@ func (h *Hub) rebuildLocked() {
 		}
 		rt.targets.Store(&l)
 	}
+	// A new receiver of the WHIP signal needs a keyframe to start: WebRTC
+	// senders send one only when asked.
+	if old := len(*h.whip.rt.targets.Load()); len(whip) > old {
+		h.whip.wantKey.Store(true)
+	}
+	h.whip.rt.targets.Store(&whip)
 }
 
 // serve reads from one connection until it ends. Whoever delivers data on a
@@ -693,6 +724,10 @@ func (h *Hub) promote(c *conn) bool {
 	if _, ok := h.conns[c]; !ok {
 		return false // the signal was cleared or renamed meanwhile
 	}
+	if c.rt == h.whip.rt {
+		h.noteRejectedLocked(c.stream, ipOf(c.sc.RemoteAddr()), "the WHIP signal gets its input over WHIP only; this stream ID is for receivers", false, whipSlotLocked(h), "SRT sender on the WHIP signal turned away")
+		return false
+	}
 	if c.pending && !h.claimLocked(c) {
 		return false
 	}
@@ -729,6 +764,9 @@ func (h *Hub) claimLocked(c *conn) bool {
 	ip := ipOf(c.sc.RemoteAddr())
 	i := h.cfg.slot(c.place)
 	switch {
+	case i >= 0 && h.cfg.Places[i].Off:
+		h.noteRejectedLocked(c.stream, ip, "the signal is switched off", false, i+1, "signal is switched off")
+		return false
 	case i >= 0 && h.cfg.Places[i].PassIn != "":
 		// Set by hand meanwhile, with a passphrase this device did not use.
 		h.noteRejectedLocked(c.stream, ip, "the signal needs a passphrase, the device sent none", false, i+1, "passphrase missing")
@@ -873,6 +911,7 @@ type State struct {
 	Remote     *RemoteStatus `json:"remote"` // filled in by the web server
 	Output     *OutputStatus `json:"output"` // Bridge Output; filled in by the web server
 	Autostart  *AutostartState `json:"autostart"`
+	Whip       *WhipState    `json:"whip"` // the WHIP signal; the program part is filled in by the web server
 }
 
 func infos(set map[*conn]struct{}) []*ConnInfo {
@@ -911,6 +950,7 @@ func (h *Hub) state() *State {
 	for i := len(h.events) - 1; i >= 0; i-- {
 		st.Events = append(st.Events, h.events[i])
 	}
+	st.Whip = h.whipStateLocked()
 	return st
 }
 
@@ -961,6 +1001,7 @@ type PlaceUpdate struct {
 	PassIn  *string `json:"passIn"`
 	PassFwd *string `json:"passFwd"`
 	RecvID  *string `json:"recvId"` // receiver key; "" = <id>*forward
+	Off     *bool   `json:"off"`    // switch the signal off (true) or on again (false)
 }
 
 // updatePlace changes the stream ID, the matrix source or a passphrase of a
@@ -984,6 +1025,9 @@ func (h *Hub) updatePlace(u PlaceUpdate) error {
 		if j := h.cfg.recvSlot(*u.ID); j >= 0 {
 			return fmt.Errorf("signal %d uses this as its receiver key", j+1)
 		}
+		if *u.ID == h.cfg.Whip.ID {
+			return errors.New("the WHIP signal uses this stream ID")
+		}
 	}
 	newID := p.ID
 	if u.ID != nil {
@@ -1003,9 +1047,11 @@ func (h *Hub) updatePlace(u PlaceUpdate) error {
 			return fmt.Errorf("signal %d uses this as its stream ID", j+1)
 		case k >= 0 && k != i:
 			return fmt.Errorf("signal %d uses this receiver key already", k+1)
+		case r == h.cfg.Whip.ID:
+			return errors.New("the WHIP signal uses this stream ID")
 		}
 	}
-	if u.Source != nil && (*u.Source < 0 || *u.Source > len(h.cfg.Places)) {
+	if u.Source != nil && !h.cfg.validSource(*u.Source) {
 		return errors.New("unknown input")
 	}
 	for _, s := range []*string{u.PassIn, u.PassFwd} {
@@ -1020,7 +1066,7 @@ func (h *Hub) updatePlace(u PlaceUpdate) error {
 		h.detachLocked(i)
 		if *u.ID == "" {
 			h.eventf("signal %d cleared (was %q)", u.Slot, p.ID)
-			p.PassIn, p.PassFwd, p.RecvID = "", "", ""
+			p.PassIn, p.PassFwd, p.RecvID, p.Off = "", "", "", false
 		} else {
 			h.eventf("signal %d is now %q", u.Slot, *u.ID)
 			kept := h.rejected[:0]
@@ -1046,6 +1092,8 @@ func (h *Hub) updatePlace(u PlaceUpdate) error {
 		kickLocked(rt.fwd)
 		if p.Source == 0 {
 			h.eventf("matrix: forward of signal %d gets nothing", u.Slot)
+		} else if p.Source == whipSource {
+			h.eventf("matrix: forward of signal %d gets the WHIP input", u.Slot)
 		} else {
 			h.eventf("matrix: forward of signal %d gets signal %d", u.Slot, p.Source)
 		}
@@ -1075,7 +1123,17 @@ func (h *Hub) updatePlace(u PlaceUpdate) error {
 			h.eventf("signal %d: new receiver key %q", u.Slot, p.RecvID)
 		}
 	}
-	if p.ID != "" && (u.Source != nil || u.PassIn != nil || u.PassFwd != nil || u.RecvID != nil) {
+	if u.Off != nil && *u.Off != p.Off && (*u.Off == false || p.ID != "" || h.cfg.perSignal()) {
+		p.Off = *u.Off
+		if p.Off {
+			// Everybody on this signal goes; they keep calling and are turned away.
+			h.rt[i].kickAllLocked()
+			h.eventf("signal %d switched off: its devices are turned away", u.Slot)
+		} else {
+			h.eventf("signal %d switched on again", u.Slot)
+		}
+	}
+	if p.ID != "" && (u.Source != nil || u.PassIn != nil || u.PassFwd != nil || u.RecvID != nil || u.Off != nil) {
 		p.Auto = false
 	}
 	h.rebuildLocked()
@@ -1113,6 +1171,9 @@ func (h *Hub) updateSettings(u SettingsUpdate) error {
 		return errors.New(why)
 	}
 	suffixes := cleanSuffixes(u.Suffixes)
+	if _, fwd := splitStreamID(h.cfg.Whip.ID, suffixes); fwd {
+		return fmt.Errorf("the stream ID of the WHIP signal %q ends with one of these suffixes", h.cfg.Whip.ID)
+	}
 	for i, p := range h.cfg.Places {
 		if _, fwd := splitStreamID(p.ID, suffixes); fwd {
 			return fmt.Errorf("the stream ID %q ends with one of these suffixes", p.ID)
@@ -1135,7 +1196,7 @@ func (h *Hub) updateSettings(u SettingsUpdate) error {
 		}
 		h.cfg.Places, h.rt, h.cfg.Slots = h.cfg.Places[:u.Slots], h.rt[:u.Slots], u.Slots
 		for i, p := range h.cfg.Places {
-			if p.Source > u.Slots {
+			if p.Source > u.Slots && p.Source != whipSource {
 				p.Source = 0
 				kickLocked(h.rt[i].fwd)
 			}

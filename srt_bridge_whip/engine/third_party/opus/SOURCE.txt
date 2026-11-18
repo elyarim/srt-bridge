@@ -1,0 +1,4 @@
+Opus 1.6.1 (Xiph.Org), opus-1.6.1.tar.gz
+SHA256 of the archive: 6FFCB593207BE92584DF15B32466ED64BBEC99109F007C82205F0194572411A1
+Taken from the FastVideo licence audit sources (2026-11-12). Licence: COPYING (BSD 3-clause).
+Built with DRED, OSCE and deep PLC off.

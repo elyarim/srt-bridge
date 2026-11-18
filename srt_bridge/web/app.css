@@ -75,6 +75,13 @@ code { background: #0b1428; padding: 1px 6px; border-radius: 6px; font-family: u
 /* Signal tiles: at most four in a row, none narrower than 280 px (fewer per row instead).
    Every line keeps its place whether there is a value or not. */
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(max(280px, calc((100% - 36px) / 4)), 1fr)); gap: 12px; margin-bottom: 16px; }
+/* With the WHIP input: the signals keep their 4 columns, the WHIP tile stands to the
+   right of them as a fifth column over all their rows (the rows are set in app.js).
+   On narrow screens it is simply the last tile. */
+@media (min-width: 1500px) {
+  .tiles.withWhip { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .tiles.withWhip .tile.whip { grid-column: 5; grid-row: 1 / span var(--whipRows, 2); align-content: start; }
+}
 .tile { background: var(--card); border: 2px solid var(--ring); border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow-card); display: grid; gap: 8px; min-width: 0; }
 .tile.free { border-color: #2c426f; background: #17243f; }
 /* Connected: a calm dark green instead of the blue. The lamp and the word LIVE still say it without colour. */
@@ -103,8 +110,20 @@ code { background: #0b1428; padding: 1px 6px; border-radius: 6px; font-family: u
 .stats .out { grid-column: 1 / 3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stats .out span { color: var(--dim); }
 .stats .out b { font-weight: 400; }
-.tileActs { display: flex; gap: 6px; flex-wrap: wrap; }
-.tileActs button { flex: 1 1 auto; }
+.tileActs { display: flex; gap: 6px; flex-wrap: nowrap; }
+.tileActs button { flex: 1 1 auto; white-space: nowrap; }
+/* Links and Edit small on the left, Reset and the power switch wide on the right. */
+.tileActs button.narrow { flex: 0 0 auto; padding: 4px 8px; }
+.tileActs button.wide { flex: 1 1 0; min-width: 0; }
+.tileActs button.resetBtn.armed { border-color: var(--amber); color: #ffd27a; font-weight: 700; }
+.tileActs button.powerBtn { color: var(--bad-text); border-color: #8a3a46; }
+.tileActs button.powerBtn.isOff { color: #fff; background: #8a2633; border-color: var(--bad); font-weight: 700; }
+/* Switched off: dark red, and the lamp says OFF with a crossed square, so it is clear without colour. */
+.tile.off { background: var(--bad-fill); border-color: var(--bad); }
+.tile.off .stats .sep { background: #7a3440; }
+.tile.off .idRow { border-color: #8a3a46; }
+.lamp.bad { color: var(--bad-text); }
+.lamp.bad i { border: 2px solid var(--bad); background: linear-gradient(45deg, transparent 43%, var(--bad-text) 43% 57%, transparent 57%), linear-gradient(-45deg, transparent 43%, var(--bad-text) 43% 57%, transparent 57%); }
 button:disabled { opacity: .4; cursor: default; }
 
 h3 { margin: 18px 0 8px; font-size: 14px; color: var(--accent2); }
@@ -123,6 +142,10 @@ h3 { margin: 18px 0 8px; font-size: 14px; color: var(--accent2); }
 .fwInline .lamp { font-size: 12px; letter-spacing: 0; white-space: normal; }
 .fwInline .lamp.bad { color: var(--bad-text); } .fwInline .lamp.bad i { border: 3px solid var(--bad); border-radius: 50%; }
 #ipHint { min-height: 2.9em; }
+.whKeyRow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
+.whKeyRow input { margin: 0; }
+.whState { margin-bottom: 6px; }
+.tile.whip .no { color: #ffd27a; }
 .genKey { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; margin-bottom: 14px; }
 .genKey code { font-size: 17px; padding: 8px 12px; color: #ffd27a; overflow-wrap: anywhere; user-select: all; min-height: 40px; }
 .genUse { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }

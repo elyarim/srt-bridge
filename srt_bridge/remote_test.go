@@ -31,11 +31,11 @@ func TestPasswordHash(t *testing.T) {
 }
 
 func TestFirewallCommand(t *testing.T) {
-	off := firewallCommand("netsh", "21101", 0)
+	off := firewallCommand("netsh", "21101", 0, 0)
 	if strings.Contains(off, "protocol=TCP") || !strings.Contains(off, `delete rule name="SRT Bridge (remote)"`) {
 		t.Fatalf("remote off must delete the TCP rule and not add it: %s", off)
 	}
-	on := firewallCommand("netsh", "21101-21108", 21101)
+	on := firewallCommand("netsh", "21101-21108", 21101, 0)
 	if !strings.Contains(on, "protocol=UDP localport=21101-21108") || !strings.Contains(on, "protocol=TCP localport=21101 ") {
 		t.Fatalf("remote on must open UDP and TCP: %s", on)
 	}
@@ -62,7 +62,7 @@ func remoteSetup(t *testing.T) (*Hub, *Remote, http.Handler, string) {
 	h := newHub(cfg, filepath.Join(dir, "config.json"))
 	t.Cleanup(h.stop) // a new latency opens the SRT port
 	rm := newRemote(h, dir)
-	web := newWebServer(h, rm, nil)
+	web := newWebServer(h, rm, nil, nil)
 	rm.inner = web
 	on, pw := true, "remote-password-1"
 	if err := h.updateRemote(RemoteUpdate{Enabled: &on, Password: &pw}); err != nil {

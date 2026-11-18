@@ -22,6 +22,7 @@ type Place struct {
 	PassFwd string `json:"passFwd"` // passphrase for <id>*forward; "" = none
 	Auto    bool   `json:"auto"`    // the ID was set by an incoming connection, not by hand
 	RecvID  string `json:"recvId"`  // receiver key: own stream ID for the forward output; "" = <id>*forward
+	Off     bool   `json:"off"`     // switched off: the bridge turns every device of this signal away
 }
 
 const maxSlots = 32
@@ -94,6 +95,39 @@ type Config struct {
 	OutputPath string `json:"outputPath"`
 	OutputAuto bool   `json:"outputAuto"`
 	OutputAddr string `json:"outputAddr"`
+	// WHIP input (whip.go): one more signal after the last one, fed by srt-bridge-whip.
+	Whip WhipConfig `json:"whip"`
+}
+
+// WhipConfig is the WHIP input: a sender (OBS, a browser, FastVideo Bridge)
+// publishes over WHIP; the picture is repacked, the sound becomes AAC, and the
+// stream is one more signal of the bridge (number Slots+1). Receivers fetch it
+// with its stream ID, and the matrix can give it to any forward output.
+type WhipConfig struct {
+	Enabled bool   `json:"enabled"`
+	Port    int    `json:"port"`       // TCP (WHIP over HTTP) and UDP (WebRTC), the same number
+	Key     string `json:"key"`        // bearer key the sender needs; "" = every sender is turned away
+	ID      string `json:"id"`         // stream ID of the signal for receivers of the original
+	Name    string `json:"name"`       // label on the tile; "" shows "WHIP"
+	Pass    string `json:"pass"`       // passphrase for receivers of the original; "" = none
+	Bitrate int    `json:"aacBitrate"` // AAC bitrate in bit/s
+	Path    string `json:"path"`       // srt-bridge-whip.exe; "" = next to the bridge
+	Off     bool   `json:"off"`        // switched off on its tile: nothing is passed on, receivers are turned away
+}
+
+// whipSource is the matrix number of the WHIP signal: a forward output with
+// this source gets the WHIP input. Above maxSlots, so it never collides with a
+// signal, and it stays when the number of signals changes.
+const whipSource = 100
+
+const defaultWhipPort = 21102
+
+// whipOn: the WHIP input is switched on and has a stream ID.
+func (c *Config) whipOn() bool { return c.Whip.Enabled && c.Whip.ID != "" }
+
+// validSource: 0 (nothing), a signal, or the WHIP signal.
+func (c *Config) validSource(s int) bool {
+	return (s >= 0 && s <= c.Slots) || s == whipSource
 }
 
 func defaultConfig() *Config {
@@ -102,7 +136,9 @@ func defaultConfig() *Config {
 		PortMode:  modeSingle,
 		LatencyMs: 200,
 		Suffixes:  []string{"forward", "talkback"},
-		AcceptAny: true,
+		// Unknown stream IDs are turned away by default (Peter, 2026-11-18: a sender
+		// with any key must not take a signal by itself). An existing config.json keeps its setting.
+		AcceptAny: false,
 		WebAddr:   "127.0.0.1:8790",
 		Slots:     8,
 	}
@@ -162,6 +198,7 @@ func (c *Config) normalize() {
 	if c.OutputAddr == "" {
 		c.OutputAddr = "127.0.0.1:8791"
 	}
+	c.Whip.Path = strings.TrimSpace(c.Whip.Path)
 	if c.Slots < 1 {
 		c.Slots = 8
 	}
@@ -204,9 +241,21 @@ func (c *Config) normalize() {
 		}
 	}
 	for _, p := range c.Places {
-		if p.Source < 0 || p.Source > c.Slots {
+		if !c.validSource(p.Source) {
 			p.Source = 0
 		}
+	}
+	if c.Whip.Port < 1024 || c.Whip.Port > 65535 {
+		c.Whip.Port = defaultWhipPort
+	}
+	if c.Whip.Bitrate < 64000 || c.Whip.Bitrate > 320000 {
+		c.Whip.Bitrate = 192000
+	}
+	if c.Whip.ID != "" && (seen[c.Whip.ID] || checkPlaceID(c.Whip.ID, c.Suffixes) != "") {
+		c.Whip.ID = ""
+	}
+	if checkPassphrase(c.Whip.Pass) != "" {
+		c.Whip.Pass = ""
 	}
 }
 
