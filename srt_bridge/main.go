@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const version = "0.5.3"
+const version = "0.5.4"
 
 func main() {
 	headless := flag.Bool("headless", false, "run without the window (the interface stays reachable in a browser)")

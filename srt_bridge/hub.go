@@ -928,6 +928,7 @@ type State struct {
 	Output     *OutputStatus   `json:"output"` // Bridge Output; filled in by the web server
 	Autostart  *AutostartState `json:"autostart"`
 	Whip       *WhipState      `json:"whip"` // the WHIP signal; the program part is filled in by the web server
+	ShutdownAt int64           `json:"shutdownAt"` // unix seconds of a pending shutdown of this PC, 0 = none
 }
 
 func infos(set map[*conn]struct{}) []*ConnInfo {

@@ -1,0 +1,4 @@
+SRT Bridge 0.5.4 · 19. November 2026
+
+- Der Edit-Dialog erklärt jetzt, wie Passphrase und AES-Schlüssellänge zusammenhängen. Jeder Encoder und Decoder wählt für seine Verbindung 128, 192 oder 256 Bit. Die Bridge übernimmt diese Wahl.
+- Über die Fernsteuerung lässt sich jetzt der gesamte Bridge-PC herunterfahren. Nach dem zweiten Klick bleiben 20 Sekunden zum Abbrechen. Danach beendet Windows die Bridge und alle anderen Programme. Ungespeicherte Änderungen können verloren gehen.

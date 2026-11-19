@@ -142,6 +142,10 @@ h3 { margin: 18px 0 8px; font-size: 14px; color: var(--accent2); }
 .fwInline .lamp { font-size: 12px; letter-spacing: 0; white-space: normal; }
 .fwInline .lamp.bad { color: var(--bad-text); } .fwInline .lamp.bad i { border: 3px solid var(--bad); border-radius: 50%; }
 #ipHint { min-height: 2.9em; }
+.sdRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 40px; }
+.sdRow .lamp { font-size: 13px; letter-spacing: 0; white-space: normal; }
+#sdBtn.armed { border-color: var(--amber); color: #ffd27a; font-weight: 700; }
+#sdBtn.pending { background: #8a2633; border-color: var(--bad); color: #fff; font-weight: 700; }
 .whKeyRow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
 .whKeyRow input { margin: 0; }
 .whState { margin-bottom: 6px; }

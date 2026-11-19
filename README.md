@@ -1,4 +1,4 @@
-# <img src="docs/logo.png" width="96" alt=""> SRT Bridge 0.53
+# <img src="docs/logo.png" width="96" alt=""> SRT Bridge 0.54
 
 ## What SRT Bridge does
 
@@ -50,7 +50,15 @@ Example: 8 channels at 10 Mbit/s, each sent to 2 receivers over the internet, ne
 3. Set the encoder to **Caller** and enter the bridgeâ€™s public address, port and sender stream ID. Once connected, its tile on **Main** shows **LIVE**.
 4. Click **Links** on the tile and copy the forward receiver URL to the decoder. Set the decoder to **Caller**. Use **Matrix** to choose which input it receives.
 
-The installer includes **SRT Bridge Output** for local OMT, NDI or SDI output. Configure it in **Outputs**. The **Help** tab explains stream IDs, routing and remote access.
+The **Help** tab explains stream IDs, routing and remote access.
+
+## Bridge Output
+
+The Windows installer includes Bridge Output. Open **Outputs**, start Bridge Output and choose a destination for each input signal. Bridge Output decodes the video and audio on the bridge PC.
+
+- **OMT** publishes the signal on the local network under the output name you choose. Open Media Transport support is built in.
+- **NDI** publishes a named NDI source on the local network. Install the NDI runtime on the bridge PC with NDI Tools.
+- **SDI** sends the signal through a physical output on a supported Blackmagic Design DeckLink card. Select the SDI port for that signal. Each port carries one signal and follows its video format.
 
 ## Remote control over HTTPS
 

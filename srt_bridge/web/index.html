@@ -274,6 +274,12 @@
         <div class="cardHead"><h2>Windows<span id="asNote" class="titleNote"></span><span id="asErr" class="titleNote err"></span></h2></div>
         <label class="check"><input type="checkbox" id="asOn"><span>Start SRT Bridge with Windows</span></label>
         <p class="dim small" id="asHelp">&nbsp;</p>
+        <h3>Shut down</h3>
+        <div class="sdRow">
+          <span class="lamp" id="sdLamp"><i></i><span id="sdText">running</span></span>
+          <button type="button" id="sdBtn">Shut down this computer</button>
+        </div>
+        <p class="dim small">Click twice. Windows shuts down after 20 seconds and closes every program, also over remote access; unsaved work in other programs is lost. «Cancel shutdown» stops it during these 20 seconds.</p>
       </div>
 
       <div class="card">
@@ -330,7 +336,7 @@
             <li><b>Sender key</b>: the stream ID the sender uses. An unknown key is turned away and listed under «Turned away», where one click gives it a free signal (Setup can let unknown keys take the next free signal instead).</li>
             <li><b>Receiver key</b> (optional, page Generate key): its own stream ID for the receivers. Then they do not need to know the sender key, and <code>sender key*forward</code> no longer works.</li>
             <li><b>Original</b>: whoever knows the sender key can also receive the signal unchanged with it. On the Generate key page this can be switched off; then the sender key only sends.</li>
-            <li><b>Passphrase</b> (Edit window): encrypts the connection, separately for the sender side and for the forward output. 10 to 79 characters, empty = none.</li>
+            <li><b>Passphrase</b> (Edit window): encrypts the connection, separately for the sender side and for the forward output. 10 to 79 characters, empty = none. The key length (AES 128, 192 or 256 bit) is set by the caller, that is every device itself, encoder and decoder alike: the bridge is always the listener and takes the length the device asks for. Every connection is encrypted on its own, so an input without passphrase and a forward output with AES-256 work together.</li>
           </ul>
         </div>
       </div>

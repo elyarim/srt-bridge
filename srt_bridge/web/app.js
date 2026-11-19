@@ -150,6 +150,7 @@ function render(st) {
   renderNet();
   renderRemote();
   renderAutostart();
+  renderShutdown();
   renderOutputs();
   renderKeys();
   renderWhip();
@@ -838,6 +839,35 @@ function renderAutostart() {
 $("asOn").addEventListener("change", () => change("PUT", "/api/autostart", { on: $("asOn").checked },
   ["asNote", "saved"], "asErr"));
 
+// Shut down this computer: two clicks on the same button (no dialog), then a
+// countdown of Windows that every open interface shows and can cancel.
+function renderShutdown() {
+  const btn = $("sdBtn"), at = state.shutdownAt || 0;
+  const left = at ? Math.max(0, at - Math.floor(Date.now() / 1000)) : 0;
+  if (at) {
+    $("sdLamp").className = "lamp bad";
+    put($("sdText"), left ? "SHUTTING DOWN in " + left + " s" : "SHUTTING DOWN");
+    delete btn.dataset.armed;
+    put(btn, "Cancel shutdown", "pending");
+  } else {
+    $("sdLamp").className = "lamp live";
+    put($("sdText"), "running");
+    if (!btn.dataset.armed) put(btn, "Shut down this computer", "");
+  }
+}
+$("sdBtn").addEventListener("click", async () => {
+  const btn = $("sdBtn");
+  if (state.shutdownAt) { await change("POST", "/api/shutdown/cancel", {}, ["asNote", "shutdown cancelled"], "asErr"); return; }
+  if (!btn.dataset.armed) {
+    btn.dataset.armed = "1";
+    put(btn, "Sure? Shut down", "armed");
+    setTimeout(() => { if (btn.dataset.armed) { delete btn.dataset.armed; renderShutdown(); } }, 3000);
+    return;
+  }
+  delete btn.dataset.armed;
+  await change("POST", "/api/shutdown", {}, ["asNote", "shutting down in 20 s"], "asErr");
+});
+
 // ---- Bridge Output: start, stop, an output per signal ----
 const OUT_KINDS = [["off", "Off"], ["omt", "OMT"], ["ndi", "NDI"]];
 const opRows = [];
@@ -999,8 +1029,8 @@ function openEdit(slot) {
   put($("editPassInLbl"), ps ? "Passphrase for this port · empty = none" : "Passphrase: input and original · empty = none");
   put($("editPassFwdLbl"), ps ? "Passphrase: forward output · not used" : "Passphrase: forward output · empty = none");
   put($("editHelp"), ps
-    ? "A passphrase has 10 to 79 characters and applies to the sender and to the receivers on this port. A new passphrase reconnects the devices of this signal."
-    : "A passphrase has 10 to 79 characters. A new key or passphrase reconnects the devices that use it.");
+    ? "A passphrase has 10 to 79 characters and applies to the sender and to the receivers on this port. A new passphrase reconnects the devices of this signal. The key length (AES 128, 192 or 256) is set by the caller: each device chooses its own."
+    : "A passphrase has 10 to 79 characters. A new key or passphrase reconnects the devices that use it. The key length (AES 128, 192 or 256) is set by the caller: each encoder and decoder chooses its own, the bridge takes it.");
   $("editErr").textContent = "";
   $("editDlg").showModal();
 }

@@ -74,6 +74,7 @@ func newWebServer(h *Hub, rm *Remote, out *Output, wp *Whip) http.Handler {
 		if wp != nil && st.Whip != nil {
 			st.Whip.Program = wp.status()
 		}
+		st.ShutdownAt = shutdownAt()
 		return st
 	}
 	// answer is the reply to a change: the new state, or the reason why nothing changed.
@@ -106,6 +107,21 @@ func newWebServer(h *Hub, rm *Remote, out *Output, wp *Whip) http.Handler {
 		if err == nil {
 			autostart.invalidate()
 			h.note("start with Windows %s", map[bool]string{true: "on", false: "off"}[in.On])
+		}
+		answer(w, r, err)
+	}))
+	// Shut down this computer (with a countdown that can be cancelled), also over remote access.
+	mux.HandleFunc("POST /api/shutdown", sameOrigin(func(w http.ResponseWriter, r *http.Request) {
+		err := requestShutdown()
+		if err == nil {
+			h.note("shutdown of this computer asked for (%s), in %d s", map[bool]string{true: "over remote access", false: "on this PC"}[isRemote(r)], int(shutdownDelay.Seconds()))
+		}
+		answer(w, r, err)
+	}))
+	mux.HandleFunc("POST /api/shutdown/cancel", sameOrigin(func(w http.ResponseWriter, r *http.Request) {
+		err := cancelShutdown()
+		if err == nil {
+			h.note("shutdown of this computer cancelled")
 		}
 		answer(w, r, err)
 	}))
