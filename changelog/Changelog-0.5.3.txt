@@ -1,8 +1,8 @@
 SRT Bridge 0.5.3 · 19. November 2026
-
+fehlerbehebungen nach tests:
 - Die Bridge meldet Konflikte zwischen SRT- und WHIP-Ports, bevor laufende Verbindungen unterbrochen werden.
-- Einstellungen werden erst nach erfolgreichem Speichern wirksam. Bei einem Schreibfehler zeigt die Oberfläche die Ursache an, und die bisherige Signalroute bleibt aktiv.
-- Gleichzeitig hinzugefügte Signale erhalten jeweils einen eigenen freien Platz.
-- Die lokale Verwaltung ist nur auf dem Bridge-PC erreichbar. Für den Zugriff über das Netzwerk steht die HTTPS-Fernverwaltung mit Anmeldung bereit.
-- Die Statusanzeige fragt Netzwerkadressen, Autostart und Programmpfade seltener ab.
-- Der Lasttest prüft jetzt die Paketfolge für jeden Empfänger. Der beim Wiederöffnen eines belegten Ports gemeldete Datenwettlauf im Test wurde behoben.
+- Einstellungen werden erst nach erfolgreichem Speichern wirksam. Bei einem Schreibfehler zeigt die Oberfläche die Ursache an, und die bisherige verbindung bleibt aktiv.
+- Gleichzeitig hinzugefügte signale erhalten jeweils einen eigenen freien Platz.
+- Die lokale Verwaltung ist nur auf dem Bridge-PC erreichbar. Das war bis 0.52 nicht so. Für den Zugriff über das Netzwerk steht die HTTPS-Fernverwaltung mit Anmeldung bereit.
+- Die Statusanzeige fragt Netzwerkadressen, Autostart und Programmpfade viel seltener ab.
+- Der Lasttest prüft jetzt die Paketfolge für jeden Empfänger. 
