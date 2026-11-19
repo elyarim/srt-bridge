@@ -93,8 +93,8 @@ var originalWait = 3 * time.Second
 // "second sender".
 const senderSilence = time.Second
 
-// listenRetry is how often a port that could not be opened is tried again.
-var listenRetry = 3 * time.Second
+// defaultListenRetry is how often a port that could not be opened is tried again.
+const defaultListenRetry = 3 * time.Second
 
 // write passes one packet on. gosrt queues it without waiting; if the queue
 // of this receiver is full or the connection is gone, the receiver is closed
@@ -211,25 +211,27 @@ type Event struct {
 // Hub owns the SRT listener, the signals and the matrix.
 // h.rt[i] belongs to h.cfg.Places[i]; both always have cfg.Slots entries.
 type Hub struct {
-	mu       sync.Mutex
-	cfg      *Config
-	cfgPath  string
-	rt       []*placeRT
-	conns    map[*conn]struct{}
-	rejected []*Rejected
-	events   []Event
-	lns      []srt.Listener // one per port of cfg.ports(); nil = that port is not open
-	lnNote   string         // what the log said last about the ports
-	srtErr   string
-	retrying bool // retryListen is running
-	closed   bool // the bridge is ending: do not open the port again
-	nextID   uint64
-	tapConn  *net.UDPConn // sends the taps; nil if it could not be opened
-	whip     whipInput    // the WHIP signal (whip.go)
+	mu          sync.Mutex
+	cfg         *Config
+	cfgPath     string
+	rt          []*placeRT
+	conns       map[*conn]struct{}
+	rejected    []*Rejected
+	events      []Event
+	lns         []srt.Listener // one per port of cfg.ports(); nil = that port is not open
+	lnNote      string         // what the log said last about the ports
+	srtErr      string
+	addresses   statusCache[[]string]
+	listenRetry time.Duration
+	retrying    bool // retryListen is running
+	closed      bool // the bridge is ending: do not open the port again
+	nextID      uint64
+	tapConn     *net.UDPConn // sends the taps; nil if it could not be opened
+	whip        whipInput    // the WHIP signal (whip.go)
 }
 
 func newHub(cfg *Config, cfgPath string) *Hub {
-	h := &Hub{cfg: cfg, cfgPath: cfgPath, conns: map[*conn]struct{}{}}
+	h := &Hub{listenRetry: defaultListenRetry, cfg: cfg, cfgPath: cfgPath, conns: map[*conn]struct{}{}}
 	h.tapConn, _ = net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	for range cfg.Places {
 		h.rt = append(h.rt, newPlaceRT())
@@ -248,10 +250,24 @@ func (h *Hub) eventf(format string, args ...any) {
 	}
 }
 
-func (h *Hub) saveLocked() {
-	if err := h.cfg.save(h.cfgPath); err != nil {
-		h.eventf("could not save the configuration: %v", err)
+var errConfigSave = errors.New("could not save the configuration")
+
+// commitLocked persists the proposed configuration before publishing it.
+func (h *Hub) commitLocked(next Config) error {
+	if err := next.save(h.cfgPath); err != nil {
+		err = fmt.Errorf("%w: %w", errConfigSave, err)
+		h.eventf("%v", err)
+		return err
 	}
+	*h.cfg = next
+	return nil
+}
+
+func (h *Hub) storePlaceLocked(i int, place Place) error {
+	next := *h.cfg
+	next.Places = append([]*Place(nil), next.Places...)
+	next.Places[i] = &place
+	return h.commitLocked(next)
 }
 
 // start opens the UDP port. An error (port in use) is kept for the interface.
@@ -291,7 +307,7 @@ func (h *Hub) startLocked() {
 	}
 	note := fmt.Sprintf("SRT listening on UDP %s, latency at least %d ms", h.cfg.portRange(), h.cfg.LatencyMs)
 	if errText != "" {
-		note = fmt.Sprintf("SRT port could not be opened: %s; trying again every %s", errText, listenRetry)
+		note = fmt.Sprintf("SRT port could not be opened: %s; trying again every %s", errText, h.listenRetry)
 	}
 	if note != h.lnNote { // said once, not on every retry
 		h.lnNote = note
@@ -317,21 +333,12 @@ func (h *Hub) allOpenLocked() bool {
 // retryListen opens the port again as soon as that works, so the bridge
 // recovers on its own when the port was busy or the network was gone.
 func (h *Hub) retryListen() {
-	for {
-		time.Sleep(listenRetry)
-		h.mu.Lock()
-		if h.allOpenLocked() || h.closed {
-			h.retrying = false
-			h.mu.Unlock()
-			return
-		}
-		h.retrying = false // startLocked starts a new round if it fails again
-		h.startLocked()
-		again := h.retrying
-		h.mu.Unlock()
-		if again {
-			return
-		}
+	time.Sleep(h.listenRetry)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.retrying = false
+	if !h.closed && !h.allOpenLocked() {
+		h.startLocked() // schedules the next retry only if a port is still unavailable
 	}
 }
 
@@ -528,9 +535,12 @@ func (h *Hub) handle(req srt.ConnRequest, slot int) {
 		} else {
 			i = free
 			old := h.cfg.Places[i]
-			*old = Place{ID: id, Name: old.Name, Source: old.Source, Auto: true}
+			if err := h.storePlaceLocked(i, Place{ID: id, Name: old.Name, Source: old.Source, Auto: true}); err != nil {
+				req.Reject(srt.REJ_PEER)
+				return
+			}
 			h.eventf("signal %d is now %q, set by a connection from %s", i+1, id, ipOf(req.RemoteAddr()))
-			h.saveLocked()
+
 		}
 	}
 	var p *Place
@@ -697,13 +707,17 @@ func (h *Hub) waitForSender(c *conn, i int) {
 }
 
 // setOriginal switches receiving the original with the sender key on or off.
-func (h *Hub) setOriginal(allow bool) {
+func (h *Hub) setOriginal(allow bool) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.cfg.NoOriginal == !allow {
-		return
+		return nil
 	}
-	h.cfg.NoOriginal = !allow
+	next := *h.cfg
+	next.NoOriginal = !allow
+	if err := h.commitLocked(next); err != nil {
+		return err
+	}
 	if !allow {
 		for _, rt := range h.rt {
 			for c := range rt.subs {
@@ -715,7 +729,7 @@ func (h *Hub) setOriginal(allow bool) {
 	} else {
 		h.eventf("receiving the original with the sender key is allowed again")
 	}
-	h.saveLocked()
+	return nil
 }
 
 func (h *Hub) promote(c *conn) bool {
@@ -777,9 +791,11 @@ func (h *Hub) claimLocked(c *conn) bool {
 			return false
 		}
 		old := h.cfg.Places[i]
-		*old = Place{ID: c.place, Name: old.Name, Source: old.Source, Auto: true}
+		if err := h.storePlaceLocked(i, Place{ID: c.place, Name: old.Name, Source: old.Source, Auto: true}); err != nil {
+			return false
+		}
 		h.eventf("signal %d is now %q, set by a connection from %s", i+1, c.place, ip)
-		h.saveLocked()
+
 	}
 	c.rt, c.pending = h.rt[i], false
 	return true
@@ -888,30 +904,30 @@ type PlaceState struct {
 }
 
 type State struct {
-	Version    string        `json:"version"`
-	SRTVer     string        `json:"srtVersion"` // SRT version the library speaks and expects at least
-	SRTLib     string        `json:"srtLibrary"` // the library and its version
-	Sys        SysState      `json:"sys"`
-	SRTPort    int           `json:"srtPort"`
-	PortMode   string        `json:"portMode"`
-	PortRange  string        `json:"portRange"` // "21101" or "21101-21108"
-	LatencyMs  int           `json:"latencyMs"`
-	Suffixes   []string      `json:"suffixes"`
-	AcceptAny  bool          `json:"acceptAny"`
-	NoOrig     bool          `json:"noOriginal"`
-	Slots      int           `json:"slots"`
-	PublicIP   string        `json:"publicIp"`
-	SRTError   string        `json:"srtError"`
-	Addresses  []string      `json:"addresses"`
-	ConfigFile string        `json:"configFile"` // where config.json is kept
-	LogFile    string        `json:"logFile"`    // where the log is kept, "-" = console
-	Places     []*PlaceState `json:"places"`
-	Rejected   []*Rejected   `json:"rejected"`
-	Events     []Event       `json:"events"`
-	Remote     *RemoteStatus `json:"remote"` // filled in by the web server
-	Output     *OutputStatus `json:"output"` // Bridge Output; filled in by the web server
+	Version    string          `json:"version"`
+	SRTVer     string          `json:"srtVersion"` // SRT version the library speaks and expects at least
+	SRTLib     string          `json:"srtLibrary"` // the library and its version
+	Sys        SysState        `json:"sys"`
+	SRTPort    int             `json:"srtPort"`
+	PortMode   string          `json:"portMode"`
+	PortRange  string          `json:"portRange"` // "21101" or "21101-21108"
+	LatencyMs  int             `json:"latencyMs"`
+	Suffixes   []string        `json:"suffixes"`
+	AcceptAny  bool            `json:"acceptAny"`
+	NoOrig     bool            `json:"noOriginal"`
+	Slots      int             `json:"slots"`
+	PublicIP   string          `json:"publicIp"`
+	SRTError   string          `json:"srtError"`
+	Addresses  []string        `json:"addresses"`
+	ConfigFile string          `json:"configFile"` // where config.json is kept
+	LogFile    string          `json:"logFile"`    // where the log is kept, "-" = console
+	Places     []*PlaceState   `json:"places"`
+	Rejected   []*Rejected     `json:"rejected"`
+	Events     []Event         `json:"events"`
+	Remote     *RemoteStatus   `json:"remote"` // filled in by the web server
+	Output     *OutputStatus   `json:"output"` // Bridge Output; filled in by the web server
 	Autostart  *AutostartState `json:"autostart"`
-	Whip       *WhipState    `json:"whip"` // the WHIP signal; the program part is filled in by the web server
+	Whip       *WhipState      `json:"whip"` // the WHIP signal; the program part is filled in by the web server
 }
 
 func infos(set map[*conn]struct{}) []*ConnInfo {
@@ -924,11 +940,12 @@ func infos(set map[*conn]struct{}) []*ConnInfo {
 }
 
 func (h *Hub) state() *State {
+	addresses := h.addresses.get("", localAddresses)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	st := &State{Version: version, SRTVer: srtVersion, SRTLib: srtLibrary, Sys: sysSnapshot(), SRTPort: h.cfg.SRTPort, PortMode: h.cfg.PortMode, PortRange: h.cfg.portRange(), LatencyMs: h.cfg.LatencyMs,
 		Suffixes: append([]string{}, h.cfg.Suffixes...), AcceptAny: h.cfg.AcceptAny, NoOrig: h.cfg.NoOriginal, Slots: h.cfg.Slots, PublicIP: h.cfg.PublicIP,
-		SRTError: h.srtErr, Addresses: localAddresses(), ConfigFile: configFile, LogFile: logFile, Places: []*PlaceState{}}
+		SRTError: h.srtErr, Addresses: addresses, ConfigFile: configFile, LogFile: logFile, Places: []*PlaceState{}}
 	for i, p := range h.cfg.Places {
 		rt := h.rt[i]
 		port := h.cfg.SRTPort
@@ -984,12 +1001,12 @@ func (h *Hub) disconnectInput(slot int) error {
 // addPlace gives the first free signal this stream ID.
 func (h *Hub) addPlace(id string) error {
 	h.mu.Lock()
+	defer h.mu.Unlock()
 	free := h.cfg.freeSlot()
-	h.mu.Unlock()
 	if free < 0 {
 		return errors.New("all signals are taken; clear one first")
 	}
-	return h.updatePlace(PlaceUpdate{Slot: free + 1, ID: &id})
+	return h.updatePlaceLocked(PlaceUpdate{Slot: free + 1, ID: &id})
 }
 
 // PlaceUpdate carries only the fields that should change.
@@ -1010,6 +1027,10 @@ type PlaceUpdate struct {
 func (h *Hub) updatePlace(u PlaceUpdate) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	return h.updatePlaceLocked(u)
+}
+
+func (h *Hub) updatePlaceLocked(u PlaceUpdate) error {
 	if u.Slot < 1 || u.Slot > len(h.cfg.Places) {
 		return errors.New("unknown signal")
 	}
@@ -1062,11 +1083,45 @@ func (h *Hub) updatePlace(u PlaceUpdate) error {
 		}
 	}
 
-	if u.ID != nil && *u.ID != p.ID {
+	next := *p
+	if newID != p.ID {
+		if newID == "" {
+			next.PassIn, next.PassFwd, next.RecvID, next.Off = "", "", "", false
+		}
+		next.ID, next.Auto = newID, false
+	}
+	if u.Name != nil {
+		name := []rune(*u.Name)
+		if len(name) > 40 {
+			name = name[:40]
+		}
+		next.Name = string(name)
+	}
+	if u.Source != nil {
+		next.Source = *u.Source
+	}
+	if u.PassIn != nil {
+		next.PassIn = *u.PassIn
+	}
+	if u.PassFwd != nil {
+		next.PassFwd = *u.PassFwd
+	}
+	if u.RecvID != nil && next.ID != "" {
+		next.RecvID = *u.RecvID
+	}
+	if u.Off != nil && (!*u.Off || next.ID != "" || h.cfg.perSignal()) {
+		next.Off = *u.Off
+	}
+	if next.ID != "" && (u.Source != nil || u.PassIn != nil || u.PassFwd != nil || u.RecvID != nil || u.Off != nil) {
+		next.Auto = false
+	}
+	if err := h.storePlaceLocked(i, next); err != nil {
+		return err
+	}
+	if next.ID != p.ID {
 		h.detachLocked(i)
 		if *u.ID == "" {
 			h.eventf("signal %d cleared (was %q)", u.Slot, p.ID)
-			p.PassIn, p.PassFwd, p.RecvID, p.Off = "", "", "", false
 		} else {
 			h.eventf("signal %d is now %q", u.Slot, *u.ID)
 			kept := h.rejected[:0]
@@ -1077,29 +1132,19 @@ func (h *Hub) updatePlace(u PlaceUpdate) error {
 			}
 			h.rejected = kept
 		}
-		p.ID, p.Auto = *u.ID, false
-	}
-	if u.Name != nil {
-		name := []rune(*u.Name)
-		if len(name) > 40 {
-			name = name[:40]
-		}
-		p.Name = string(name)
 	}
 	rt := h.rt[i]
-	if u.Source != nil && *u.Source != p.Source {
-		p.Source = *u.Source
+	if next.Source != p.Source {
 		kickLocked(rt.fwd)
-		if p.Source == 0 {
+		if next.Source == 0 {
 			h.eventf("matrix: forward of signal %d gets nothing", u.Slot)
-		} else if p.Source == whipSource {
+		} else if next.Source == whipSource {
 			h.eventf("matrix: forward of signal %d gets the WHIP input", u.Slot)
 		} else {
-			h.eventf("matrix: forward of signal %d gets signal %d", u.Slot, p.Source)
+			h.eventf("matrix: forward of signal %d gets signal %d", u.Slot, next.Source)
 		}
 	}
-	if u.PassIn != nil && *u.PassIn != p.PassIn {
-		p.PassIn = *u.PassIn
+	if next.PassIn != p.PassIn {
 		if rt.sender != nil {
 			go rt.sender.sc.Close()
 		}
@@ -1109,23 +1154,20 @@ func (h *Hub) updatePlace(u PlaceUpdate) error {
 		}
 		h.eventf("signal %d: passphrase of the input changed", u.Slot)
 	}
-	if u.PassFwd != nil && *u.PassFwd != p.PassFwd {
-		p.PassFwd = *u.PassFwd
+	if next.PassFwd != p.PassFwd {
 		kickLocked(rt.fwd)
 		h.eventf("signal %d: passphrase of the forward output changed", u.Slot)
 	}
-	if u.RecvID != nil && *u.RecvID != p.RecvID && p.ID != "" {
-		p.RecvID = *u.RecvID
+	if next.RecvID != p.RecvID {
 		kickLocked(rt.fwd) // they reconnect and must use the new key
-		if p.RecvID == "" {
-			h.eventf("signal %d: receiver key removed, receivers use %q", u.Slot, h.cfg.forwardName(p))
+		if next.RecvID == "" {
+			h.eventf("signal %d: receiver key removed, receivers use %q", u.Slot, h.cfg.forwardName(&next))
 		} else {
-			h.eventf("signal %d: new receiver key %q", u.Slot, p.RecvID)
+			h.eventf("signal %d: new receiver key %q", u.Slot, next.RecvID)
 		}
 	}
-	if u.Off != nil && *u.Off != p.Off && (*u.Off == false || p.ID != "" || h.cfg.perSignal()) {
-		p.Off = *u.Off
-		if p.Off {
+	if next.Off != p.Off {
+		if next.Off {
 			// Everybody on this signal goes; they keep calling and are turned away.
 			h.rt[i].kickAllLocked()
 			h.eventf("signal %d switched off: its devices are turned away", u.Slot)
@@ -1133,11 +1175,8 @@ func (h *Hub) updatePlace(u PlaceUpdate) error {
 			h.eventf("signal %d switched on again", u.Slot)
 		}
 	}
-	if p.ID != "" && (u.Source != nil || u.PassIn != nil || u.PassFwd != nil || u.RecvID != nil || u.Off != nil) {
-		p.Auto = false
-	}
 	h.rebuildLocked()
-	h.saveLocked()
+
 	return nil
 }
 
@@ -1186,37 +1225,57 @@ func (h *Hub) updateSettings(u SettingsUpdate) error {
 			return fmt.Errorf("signal %d (%q) is in use; clear it before reducing the number", i+1, p.ID)
 		}
 	}
-	if u.Slots != h.cfg.Slots {
-		for len(h.cfg.Places) < u.Slots {
-			h.cfg.Places = append(h.cfg.Places, &Place{})
-			h.rt = append(h.rt, newPlaceRT())
+	oldSlots, oldMode := h.cfg.Slots, h.cfg.PortMode
+	next := *h.cfg
+	next.SRTPort, next.LatencyMs, next.PortMode = u.SRTPort, u.LatencyMs, u.PortMode
+	next.Suffixes, next.AcceptAny, next.Slots = suffixes, u.AcceptAny, u.Slots
+	if next.whipOn() {
+		if err := next.checkWhipPort(next.Whip.Port); err != nil {
+			return err
 		}
-		for i := u.Slots; i < len(h.cfg.Places); i++ {
+	}
+	if u.Slots != oldSlots {
+		next.Places = make([]*Place, u.Slots)
+		for i := range next.Places {
+			var p Place
+			if i < oldSlots {
+				p = *h.cfg.Places[i]
+			}
+			if !next.validSource(p.Source) {
+				p.Source = 0
+			}
+			next.Places[i] = &p
+		}
+	}
+	restart := u.SRTPort != h.cfg.SRTPort || u.LatencyMs != h.cfg.LatencyMs || u.PortMode != oldMode ||
+		len(h.lns) != len(next.ports()) || !h.allOpenLocked()
+	oldPlaces := h.cfg.Places
+	if err := h.commitLocked(next); err != nil {
+		return err
+	}
+	if u.Slots != oldSlots {
+		for i := u.Slots; i < oldSlots; i++ {
 			h.detachLocked(i)
 		}
-		h.cfg.Places, h.rt, h.cfg.Slots = h.cfg.Places[:u.Slots], h.rt[:u.Slots], u.Slots
-		for i, p := range h.cfg.Places {
-			if p.Source > u.Slots && p.Source != whipSource {
-				p.Source = 0
+		for len(h.rt) < u.Slots {
+			h.rt = append(h.rt, newPlaceRT())
+		}
+		h.rt = h.rt[:u.Slots]
+		for i := 0; i < min(oldSlots, u.Slots); i++ {
+			if oldPlaces[i].Source != next.Places[i].Source {
 				kickLocked(h.rt[i].fwd)
 			}
 		}
 		h.rebuildLocked()
 		h.eventf("number of signals is now %d", u.Slots)
 	}
-	// A port per signal: a new number of signals is a new set of ports.
-	restart := u.SRTPort != h.cfg.SRTPort || u.LatencyMs != h.cfg.LatencyMs || u.PortMode != h.cfg.PortMode ||
-		len(h.lns) != len((&Config{SRTPort: u.SRTPort, PortMode: u.PortMode, Slots: u.Slots}).ports()) || !h.allOpenLocked()
-	if u.PortMode != h.cfg.PortMode {
-		if u.PortMode == modeSignal {
+	if u.PortMode != oldMode {
+		if next.perSignal() {
 			h.eventf("ports: one port per signal, the port says which signal")
 		} else {
 			h.eventf("ports: one port for all signals, the stream ID says which signal")
 		}
 	}
-	h.cfg.SRTPort, h.cfg.LatencyMs, h.cfg.PortMode = u.SRTPort, u.LatencyMs, u.PortMode
-	h.cfg.Suffixes, h.cfg.AcceptAny = suffixes, u.AcceptAny
-	h.saveLocked()
 	if restart {
 		h.stopLocked()
 		h.startLocked()
@@ -1233,9 +1292,13 @@ func (h *Hub) setPublicIP(v string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if ip != h.cfg.PublicIP {
-		h.cfg.PublicIP = ip
+		next := *h.cfg
+		next.PublicIP = ip
+		if err := h.commitLocked(next); err != nil {
+			return err
+		}
 		h.eventf("public IP saved: %q", ip)
-		h.saveLocked()
+
 	}
 	return nil
 }

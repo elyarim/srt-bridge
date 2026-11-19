@@ -41,7 +41,7 @@ type whipInput struct {
 	probe   *tsProbe
 	pkts    atomic.Uint64 // TS packets received
 	bytes   atomic.Uint64
-	last    atomic.Int64 // unix nanoseconds of the last datagram
+	last    atomic.Int64  // unix nanoseconds of the last datagram
 	mbps    atomic.Uint64 // math.Float64bits of the rate over the last second
 	wantKey atomic.Bool   // a receiver joined: ask the sender for a keyframe
 	off     atomic.Bool   // switched off on the tile: nothing is passed on
@@ -167,23 +167,23 @@ func (h *Hub) handleWhipLocked(req srt.ConnRequest, forward bool) {
 
 // WhipState is the WHIP tile and its settings.
 type WhipState struct {
-	Slot      int             `json:"slot"`
-	Enabled   bool            `json:"enabled"`
-	Port      int             `json:"port"`
-	Key       string          `json:"key"`
-	ID        string          `json:"id"`
-	Name      string          `json:"name"`
-	Pass      string          `json:"pass"`
-	Bitrate   int             `json:"aacBitrate"`
-	Custom    string          `json:"custom"` // program path set by hand
-	Off       bool            `json:"off"`    // switched off on the tile
-	Live      bool            `json:"live"`   // the stream comes in
-	Kbps      uint64          `json:"kbps"`
-	Pkts      uint64          `json:"pkts"`
-	Media     *MediaInfo      `json:"media,omitempty"`
-	Receivers []*ConnInfo     `json:"receivers"`
-	Forward   []int           `json:"forward"` // forward outputs (signal numbers) the matrix points at it
-	Program   *WhipProgram    `json:"program"` // filled in by the web server
+	Slot      int          `json:"slot"`
+	Enabled   bool         `json:"enabled"`
+	Port      int          `json:"port"`
+	Key       string       `json:"key"`
+	ID        string       `json:"id"`
+	Name      string       `json:"name"`
+	Pass      string       `json:"pass"`
+	Bitrate   int          `json:"aacBitrate"`
+	Custom    string       `json:"custom"` // program path set by hand
+	Off       bool         `json:"off"`    // switched off on the tile
+	Live      bool         `json:"live"`   // the stream comes in
+	Kbps      uint64       `json:"kbps"`
+	Pkts      uint64       `json:"pkts"`
+	Media     *MediaInfo   `json:"media,omitempty"`
+	Receivers []*ConnInfo  `json:"receivers"`
+	Forward   []int        `json:"forward"` // forward outputs (signal numbers) the matrix points at it
+	Program   *WhipProgram `json:"program"` // filled in by the web server
 }
 
 func (h *Hub) whipStateLocked() *WhipState {
@@ -225,14 +225,6 @@ func (h *Hub) updateWhip(u WhipUpdate) (restart bool, err error) {
 		p := *u.Port
 		if p < 1024 || p > 65535 {
 			return false, errors.New("the WHIP port must be between 1024 and 65535")
-		}
-		for _, sp := range h.cfg.ports() {
-			if sp == p {
-				return false, fmt.Errorf("port %d is an SRT port of the bridge", p)
-			}
-		}
-		if _, wp, _ := net.SplitHostPort(h.cfg.WebAddr); wp == strconv.Itoa(p) {
-			return false, fmt.Errorf("port %d is the port of the interface", p)
 		}
 		w.Port = p
 	}
@@ -296,11 +288,20 @@ func (h *Hub) updateWhip(u WhipUpdate) (restart bool, err error) {
 	if w.Enabled && w.ID == "" {
 		return false, errors.New("the WHIP signal needs a stream ID for its receivers")
 	}
+	if w.Enabled || u.Port != nil {
+		if err := h.cfg.checkWhipPort(w.Port); err != nil {
+			return false, err
+		}
+	}
 	old := h.cfg.Whip
 	if old == w {
 		return false, nil
 	}
-	h.cfg.Whip = w
+	next := *h.cfg
+	next.Whip = w
+	if err := h.commitLocked(next); err != nil {
+		return false, err
+	}
 	h.whip.off.Store(w.Off)
 	if old.ID != w.ID || old.Pass != w.Pass || (old.Enabled && !w.Enabled) || (w.Off && !old.Off) {
 		kickLocked(h.whip.rt.subs)
@@ -316,7 +317,6 @@ func (h *Hub) updateWhip(u WhipUpdate) (restart bool, err error) {
 	default:
 		h.eventf("WHIP input: settings changed")
 	}
-	h.saveLocked()
 	return restart, nil
 }
 
@@ -332,8 +332,9 @@ type WhipProgram struct {
 }
 
 type Whip struct {
-	hub    *Hub
-	client *http.Client
+	location statusCache[programLocation]
+	hub      *Hub
+	client   *http.Client
 
 	mu        sync.Mutex
 	cmd       *exec.Cmd
@@ -348,24 +349,8 @@ func newWhip(h *Hub) *Whip {
 	return &Whip{hub: h, client: &http.Client{Timeout: 1500 * time.Millisecond}}
 }
 
-func (w *Whip) exePath() (string, bool) {
-	w.hub.mu.Lock()
-	custom := w.hub.cfg.Whip.Path
-	w.hub.mu.Unlock()
-	if custom != "" {
-		_, err := os.Stat(custom)
-		return custom, err == nil
-	}
-	dir := exeDir()
-	for _, p := range []string{
-		filepath.Join(dir, "whip", whipExeName),
-		filepath.Join(dir, "..", "srt_bridge_whip", "bin", whipExeName),
-	} {
-		if _, err := os.Stat(p); err == nil {
-			return filepath.Clean(p), true
-		}
-	}
-	return "", false
+func whipLocation(custom string) programLocation {
+	return findProgram(custom, "whip", "srt_bridge_whip", whipExeName)
 }
 
 // loop keeps the program running while WHIP is on, reads its state, and asks
@@ -433,7 +418,8 @@ func (w *Whip) setErr(msg string) {
 }
 
 func (w *Whip) start() error {
-	exe, found := w.exePath()
+	loc := whipLocation(w.hub.whipPath())
+	exe, found := loc.path, loc.found
 	if !found {
 		if exe == "" {
 			return errors.New("the program " + whipExeName + " was not found next to the bridge")
@@ -556,8 +542,9 @@ func (w *Whip) disconnect() error {
 }
 
 func (w *Whip) status() *WhipProgram {
-	path, found := w.exePath()
+	custom := w.hub.whipPath()
+	loc := w.location.get(custom, func() programLocation { return whipLocation(custom) })
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return &WhipProgram{Path: path, Found: found, Running: w.ok && w.cmd != nil, Error: w.err, State: w.state}
+	return &WhipProgram{Path: loc.path, Found: loc.found, Running: w.ok && w.cmd != nil, Error: w.err, State: w.state}
 }

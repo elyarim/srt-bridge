@@ -15,7 +15,7 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
+
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -40,8 +40,9 @@ type OutputStatus struct {
 }
 
 type Output struct {
-	hub    *Hub
-	client *http.Client
+	location statusCache[programLocation]
+	hub      *Hub
+	client   *http.Client
 
 	mu        sync.Mutex
 	cmd       *exec.Cmd // started by the bridge and not ended yet
@@ -66,24 +67,10 @@ func (o *Output) conf() (path, addr string, auto bool) {
 	return o.hub.cfg.OutputPath, o.hub.cfg.OutputAddr, o.hub.cfg.OutputAuto
 }
 
-// exePath finds the program: the path set by hand, or next to the bridge in
+// outputLocation finds the program: the path set by hand, or next to the bridge in
 // "output" (the installation), or the development copy next to this project.
-func (o *Output) exePath() (string, bool) {
-	custom, _, _ := o.conf()
-	if custom != "" {
-		_, err := os.Stat(custom)
-		return custom, err == nil
-	}
-	dir := exeDir()
-	for _, p := range []string{
-		filepath.Join(dir, "output", outputExeName),
-		filepath.Join(dir, "..", "srt_bridge_output", "bin", outputExeName),
-	} {
-		if _, err := os.Stat(p); err == nil {
-			return filepath.Clean(p), true
-		}
-	}
-	return "", false
+func outputLocation(custom string) programLocation {
+	return findProgram(custom, "output", "srt_bridge_output", outputExeName)
 }
 
 func (o *Output) base() string {
@@ -140,7 +127,8 @@ func (o *Output) start() error {
 	if o.ok || o.cmd != nil {
 		return nil
 	}
-	exe, found := o.exePath()
+	loc := outputLocation(o.hub.outputPath())
+	exe, found := loc.path, loc.found
 	if !found {
 		if exe == "" {
 			return errors.New("the program " + outputExeName + " was not found next to the bridge")
@@ -217,10 +205,10 @@ func (o *Output) shutdown() {
 
 func (o *Output) status() *OutputStatus {
 	custom, _, auto := o.conf()
-	path, found := o.exePath()
+	loc := o.location.get(custom, func() programLocation { return outputLocation(custom) })
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return &OutputStatus{Path: path, Custom: custom, Found: found, Running: o.ok, Ours: o.cmd != nil, Want: o.want, Auto: auto, Error: o.err, State: o.state}
+	return &OutputStatus{Path: loc.path, Custom: custom, Found: loc.found, Running: o.ok, Ours: o.cmd != nil, Want: o.want, Auto: auto, Error: o.err, State: o.state}
 }
 
 // setOut hands a setting of one signal to the program: output and output name.
@@ -263,14 +251,18 @@ func (h *Hub) updateOutputSettings(u OutputSettings) error {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if u.Auto != h.cfg.OutputAuto {
+	oldPath, oldAuto := h.cfg.OutputPath, h.cfg.OutputAuto
+	next := *h.cfg
+	next.OutputAuto, next.OutputPath = u.Auto, u.Path
+	if err := h.commitLocked(next); err != nil {
+		return err
+	}
+	if u.Auto != oldAuto {
 		h.eventf("Bridge Output: start with the bridge %s", map[bool]string{true: "on", false: "off"}[u.Auto])
 	}
-	if u.Path != h.cfg.OutputPath {
+	if u.Path != oldPath {
 		h.eventf("Bridge Output: program path %q", u.Path)
 	}
-	h.cfg.OutputAuto, h.cfg.OutputPath = u.Auto, u.Path
-	h.saveLocked()
 	return nil
 }
 

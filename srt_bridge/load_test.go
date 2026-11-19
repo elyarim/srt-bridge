@@ -1,11 +1,11 @@
 package main
 
 import (
+	"encoding/binary"
+	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -20,7 +20,6 @@ func TestLoad(t *testing.T) {
 		t.Skip("set SRT_LOAD to the number of receivers")
 	}
 	h := testHub(t, true)
-	stop := make(chan struct{})
 
 	cam, err := dial("cam1", "")
 	if err != nil {
@@ -32,80 +31,110 @@ func TestLoad(t *testing.T) {
 	if rate <= 0 {
 		rate = 8
 	}
-	var sent atomic.Uint64
-	go func() {
-		pkt := make([]byte, 1316)
-		tk := time.NewTicker(time.Duration(3 * 1316 * 8 / (rate * 1e6) * float64(time.Second)))
-		defer tk.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-tk.C:
-				for i := 0; i < 3; i++ {
-					if _, err := cam.Write(pkt); err != nil {
-						return
-					}
-					sent.Add(1)
-				}
-			}
+	// Claim the input before connecting receivers. Zero marks unmeasured packets.
+	packet := make([]byte, 1316)
+	if _, err := cam.Write(packet); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for h.state().Places[0].Sender == nil {
+		if time.Now().After(deadline) {
+			t.Fatal("sender did not become live")
 		}
-	}()
-	time.Sleep(300 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
+	}
 	set(t, h, PlaceUpdate{Slot: 1, Source: ptr(1)})
-
-	got := make([]atomic.Uint64, n)
-	var failed, ended atomic.Int32
-	var wg sync.WaitGroup
+	const endMarker = ^uint64(0)
+	type result struct {
+		index int
+		count uint64
+		err   error
+	}
+	results := make(chan result, n)
+	var readers sync.WaitGroup
+	defer readers.Wait() // connections close first, including on early failure
 	for i := 0; i < n; i++ {
 		c, err := dial("cam1*forward", "")
 		if err != nil {
-			failed.Add(1)
-			continue
+			t.Fatalf("receiver %d could not connect: %v", i+1, err)
 		}
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+		defer c.Close()
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			r := result{index: i}
+			defer func() { results <- r }()
 			buf := make([]byte, 2048)
 			for {
-				if _, err := c.Read(buf); err != nil {
-					select {
-					case <-stop:
-					default:
-						ended.Add(1)
-					}
+				size, err := c.Read(buf)
+				if err != nil {
+					r.err = fmt.Errorf("connection ended: %w", err)
 					return
 				}
-				got[i].Add(1)
+				if size != len(packet) {
+					r.err = fmt.Errorf("payload size %d", size)
+					return
+				}
+				seq := binary.BigEndian.Uint64(buf)
+				if seq == 0 {
+					continue
+				}
+				if seq == endMarker {
+					return
+				}
+				if seq != r.count+1 {
+					r.err = fmt.Errorf("expected sequence %d, received %d", r.count+1, seq)
+					return
+				}
+				r.count++
 			}
-		}(i)
-		defer c.Close()
+		}()
 	}
-	time.Sleep(time.Second)
-	for i := range got {
-		got[i].Store(0)
+	// gosrt can finish the caller handshake just before the hub installs the route.
+	deadline = time.Now().Add(5 * time.Second)
+	for len(h.state().Places[0].Forward) != n {
+		if time.Now().After(deadline) {
+			t.Fatal("receiver routes did not become ready")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	start := sent.Load()
-	time.Sleep(10 * time.Second)
-	total := sent.Load() - start
-	var min, sum uint64 = ^uint64(0), 0
-	for i := range got {
-		v := got[i].Load()
-		sum += v
-		if v < min {
-			min = v
+	interval := time.Duration(3 * 1316 * 8 / (rate * 1e6) * float64(time.Second))
+	if interval <= 0 {
+		t.Fatal("invalid load rate")
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	start := time.Now()
+	var sent uint64
+	for time.Since(start) < 10*time.Second {
+		<-ticker.C
+		for j := 0; j < 3; j++ {
+			sent++
+			binary.BigEndian.PutUint64(packet, sent)
+			if _, err := cam.Write(packet); err != nil {
+				t.Fatalf("sender: %v", err)
+			}
 		}
 	}
-	close(stop)
-	full := 0
-	for _, e := range h.state().Events {
-		if strings.Contains(e.Text, "send queue was full") {
-			full++
+	elapsed := time.Since(start).Seconds()
+	binary.BigEndian.PutUint64(packet, endMarker)
+	if _, err := cam.Write(packet); err != nil {
+		t.Fatal(err)
+	}
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	var delivered uint64
+	for range n {
+		select {
+		case r := <-results:
+			delivered += r.count
+			if r.err != nil || r.count != sent {
+				t.Errorf("receiver %d: %d of %d packets, error %v", r.index+1, r.count, sent, r.err)
+			}
+		case <-timer.C:
+			t.Fatal("timed out waiting for the final packet at every receiver")
 		}
 	}
-	t.Logf("closed by the bridge for a full send queue (of the last 200 events): %d", full)
-	t.Logf("%d receivers asked, %d could not connect, %d were closed during the run", n, failed.Load(), ended.Load())
-	t.Logf("sender: %d packets in 10 s (%.1f Mbit/s)", total, float64(total)*1316*8/10/1e6)
-	t.Logf("delivered on average %.1f %%, worst receiver %.1f %%, total out %.0f Mbit/s",
-		float64(sum)/float64(n)/float64(total)*100, float64(min)/float64(total)*100, float64(sum)*1316*8/10/1e6)
+	t.Logf("%d receivers, %d numbered packets sent, %d/%d delivered; input %.2f Mbit/s, aggregate output %.2f Mbit/s",
+		n, sent, delivered, sent*uint64(n), float64(sent)*1316*8/elapsed/1e6, float64(delivered)*1316*8/elapsed/1e6)
 }

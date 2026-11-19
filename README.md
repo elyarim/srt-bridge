@@ -1,4 +1,4 @@
-# <img src="docs/logo.png" width="96" alt=""> SRT Bridge 0.52
+# <img src="docs/logo.png" width="96" alt=""> SRT Bridge 0.53
 
 ## What SRT Bridge does
 

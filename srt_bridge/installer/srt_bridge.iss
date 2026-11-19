@@ -1,4 +1,4 @@
-﻿; SRT Bridge setup. Built by installer\build-setup.ps1, which passes the version
+; SRT Bridge setup. Built by installer\build-setup.ps1, which passes the version
 ; from main.go: ISCC /DMyAppVersion=0.3.5 srt_bridge.iss
 
 #ifndef MyAppVersion
@@ -13,6 +13,7 @@
 AppId={{4726D871-576E-4A0D-98C2-67EE8D1BEA3F}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppVersion}.0
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher=Peter Aellig
 ; The program only reads its folder. Settings and log go to the places Windows

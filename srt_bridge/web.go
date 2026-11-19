@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
-	"strings"
 	"net"
 	"net/http"
+	"strings"
 
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -60,6 +60,7 @@ func newWebServer(h *Hub, rm *Remote, out *Output, wp *Whip) http.Handler {
 
 	// full is the state of the hub plus what lives outside it; every answer
 	// to a change carries it, so the page never draws half a state.
+	var autostart statusCache[AutostartState]
 	full := func(r *http.Request) *State {
 		st := h.state()
 		if rm != nil {
@@ -68,7 +69,7 @@ func newWebServer(h *Hub, rm *Remote, out *Output, wp *Whip) http.Handler {
 		if out != nil {
 			st.Output = out.status()
 		}
-		as := autostartState()
+		as := autostart.get("", autostartState)
 		st.Autostart = &as
 		if wp != nil && st.Whip != nil {
 			st.Whip.Program = wp.status()
@@ -79,7 +80,11 @@ func newWebServer(h *Hub, rm *Remote, out *Output, wp *Whip) http.Handler {
 	answer := func(w http.ResponseWriter, r *http.Request, err error) {
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			w.WriteHeader(http.StatusBadRequest)
+			status := http.StatusBadRequest
+			if errors.Is(err, errConfigSave) {
+				status = http.StatusInternalServerError
+			}
+			w.WriteHeader(status)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
@@ -99,6 +104,7 @@ func newWebServer(h *Hub, rm *Remote, out *Output, wp *Whip) http.Handler {
 		}
 		err := setAutostart(in.On)
 		if err == nil {
+			autostart.invalidate()
 			h.note("start with Windows %s", map[bool]string{true: "on", false: "off"}[in.On])
 		}
 		answer(w, r, err)
@@ -259,8 +265,7 @@ func newWebServer(h *Hub, rm *Remote, out *Output, wp *Whip) http.Handler {
 			Allow bool `json:"allow"`
 		}
 		if readBody(w, r, &in) {
-			h.setOriginal(in.Allow)
-			answer(w, r, nil)
+			answer(w, r, h.setOriginal(in.Allow))
 		}
 	}))
 	mux.HandleFunc("POST /api/disconnect", sameOrigin(func(w http.ResponseWriter, r *http.Request) {
@@ -330,5 +335,15 @@ func newWebServer(h *Hub, rm *Remote, out *Output, wp *Whip) http.Handler {
 // listenWeb opens the port of the interface. The address that was really
 // bound is returned, so ":0" works for tests.
 func listenWeb(addr string) (net.Listener, error) {
-	return net.Listen("tcp", addr)
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	if strings.EqualFold(host, "localhost") {
+		host = "127.0.0.1"
+	}
+	if !net.ParseIP(host).IsLoopback() {
+		return nil, errors.New("the local interface requires a loopback address; enable HTTPS remote access for network clients")
+	}
+	return net.Listen("tcp", net.JoinHostPort(host, port))
 }

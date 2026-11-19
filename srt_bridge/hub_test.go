@@ -293,8 +293,6 @@ func TestSenderComesBack(t *testing.T) {
 // A port that is busy at the start is opened as soon as it is free.
 func TestPortOpensLater(t *testing.T) {
 	log.SetOutput(io.Discard)
-	listenRetry = 300 * time.Millisecond
-	defer func() { listenRetry = 3 * time.Second }()
 	busy, err := net.ListenPacket("udp", ":19002")
 	if err != nil {
 		t.Fatal(err)
@@ -302,6 +300,7 @@ func TestPortOpensLater(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.SRTPort = 19002
 	h := newHub(cfg, filepath.Join(t.TempDir(), "config.json"))
+	h.listenRetry = 300 * time.Millisecond
 	h.start()
 	defer h.stop()
 	if h.state().SRTError == "" {

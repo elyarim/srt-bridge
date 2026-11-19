@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -72,6 +73,21 @@ func checkPorts(first, slots int, mode string) string {
 		return fmt.Sprintf("with %d signals the first port must not be above %d", slots, 65536-slots)
 	}
 	return ""
+}
+
+func (c *Config) checkWhipPort(port int) error {
+	for i, sp := range c.ports() {
+		if sp == port {
+			if c.perSignal() {
+				return fmt.Errorf("WHIP port %d overlaps SRT signal %d", port, i+1)
+			}
+			return fmt.Errorf("WHIP port %d overlaps the SRT listener", port)
+		}
+	}
+	if _, wp, _ := net.SplitHostPort(c.WebAddr); wp == strconv.Itoa(port) {
+		return fmt.Errorf("port %d is the port of the interface", port)
+	}
+	return nil
 }
 
 // Config is everything that is saved in config.json next to the program.

@@ -136,8 +136,9 @@ func (h *Hub) ensureAPIToken() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.cfg.Remote.APIToken == "" {
-		h.cfg.Remote.APIToken = newToken()
-		h.saveLocked()
+		next := *h.cfg
+		next.Remote.APIToken = newToken()
+		h.commitLocked(next) // commitLocked records any startup failure in the event log
 	}
 }
 
@@ -161,27 +162,37 @@ func (h *Hub) updateRemote(u RemoteUpdate) error {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	r := &h.cfg.Remote
+	next := *h.cfg
+	r := &next.Remote
 	if u.Enabled != nil && *u.Enabled && r.PassHash == "" && hash == "" {
 		return errors.New("set a password first")
 	}
+	enabledChanged := u.Enabled != nil && *u.Enabled != r.Enabled
 	if hash != "" {
 		r.PassHash = hash
-		h.eventf("remote access: new password set")
 	}
 	if u.NewToken {
 		r.APIToken = newToken()
+	}
+	if u.Enabled != nil {
+		r.Enabled = *u.Enabled
+	}
+	if err := h.commitLocked(next); err != nil {
+		return err
+	}
+	if hash != "" {
+		h.eventf("remote access: new password set")
+	}
+	if u.NewToken {
 		h.eventf("remote access: new API token, the old one no longer works")
 	}
-	if u.Enabled != nil && *u.Enabled != r.Enabled {
-		r.Enabled = *u.Enabled
+	if enabledChanged {
 		if r.Enabled {
 			h.eventf("remote access switched on (HTTPS on TCP %d)", h.cfg.SRTPort)
 		} else {
 			h.eventf("remote access switched off")
 		}
 	}
-	h.saveLocked()
 	return nil
 }
 
