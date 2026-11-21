@@ -404,8 +404,14 @@
 
 <dialog id="qrDlg" class="qr">
   <div class="cardHead"><h2 id="qrTitle">QR code</h2><button type="button" data-close>Close</button></div>
+  <div class="qrTabs" id="qrTabs" style="display:flex;gap:6px;margin:8px 0;">
+    <button type="button" id="qrTabRaw" class="sm on">Direct / Raw</button>
+    <button type="button" id="qrTabLarix" class="sm">Larix App</button>
+    <button type="button" id="qrTabHaivision" class="sm">Haivision Web</button>
+  </div>
   <div class="qrBox"><img id="qrImg" alt="QR code of the link" width="360" height="360"></div>
   <code id="qrText"></code>
+  <p class="dim small" id="qrHint" style="margin-top:6px;font-size:12px;"></p>
 </dialog>
 
 <dialog id="editDlg">

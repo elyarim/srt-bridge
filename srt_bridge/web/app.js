@@ -760,18 +760,71 @@ function showLinkRows(rows) {
 
 // The QR code is drawn by the bridge itself (no internet needed) and shown in a small window.
 let qrUrl = "";
+let qrActiveWhat = "", qrActiveLink = "", qrActiveMode = "raw";
+
+function parseSrtUrlParams(u) {
+  try {
+    const q = u.indexOf("?");
+    const base = q >= 0 ? u.slice(0, q) : u;
+    const search = q >= 0 ? new URLSearchParams(u.slice(q + 1)) : new URLSearchParams();
+    return { base, streamid: search.get("streamid") || "", latency: search.get("latency") || "120", pass: search.get("passphrase") || "" };
+  } catch { return { base: u, streamid: "", latency: "120", pass: "" }; }
+}
+
+function buildQrTarget(mode, what, link) {
+  if (!link.startsWith("srt://")) {
+    return { text: link, hint: "" };
+  }
+  const parsed = parseSrtUrlParams(link);
+  if (mode === "larix") {
+    let l = "larix://set/v1?conn[][url]=" + encodeURIComponent(parsed.base)
+      + "&conn[][name]=" + encodeURIComponent("SRT " + what)
+      + "&conn[][srtmode]=c"
+      + "&conn[][srtlatency]=" + (parsed.latency || state.latencyMs);
+    if (parsed.streamid) l += "&conn[][srtstreamid]=" + encodeURIComponent(parsed.streamid);
+    if (parsed.pass) l += "&conn[][srtpass]=" + encodeURIComponent(parsed.pass);
+    return { text: l, hint: "Open Larix Broadcaster and scan this QR code to auto-import connection settings." };
+  }
+  if (mode === "haivision") {
+    const hv = "https://play.haivision.com/play?url=" + encodeURIComponent(link.replace("streamid=", "StreamID=").replace("latency=", "Latency="));
+    return { text: hv, hint: "Standard web URL for mobile camera and Haivision Play Pro." };
+  }
+  return { text: link, hint: "Direct SRT URI. For phone camera scanner, select 'Larix App' or 'Haivision Web' above." };
+}
+
+async function updateQrImage() {
+  const { text, hint } = buildQrTarget(qrActiveMode, qrActiveWhat, qrActiveLink);
+  const res = await fetch("/api/qr", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+  if (!res.ok) throw new Error((await res.text()).trim() || "no QR code");
+  if (qrUrl) URL.revokeObjectURL(qrUrl);
+  qrUrl = URL.createObjectURL(await res.blob());
+  $("qrImg").src = qrUrl;
+  $("qrTitle").textContent = "QR code · " + qrActiveWhat;
+  $("qrText").textContent = text;
+  $("qrText").title = qrActiveWhat;
+  if ($("qrHint")) $("qrHint").textContent = hint;
+}
+
 async function openQr(what, link) {
   try {
-    const res = await fetch("/api/qr", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: link }) });
-    if (!res.ok) throw new Error((await res.text()).trim() || "no QR code");
-    if (qrUrl) URL.revokeObjectURL(qrUrl);
-    qrUrl = URL.createObjectURL(await res.blob());
-    $("qrImg").src = qrUrl;
-    $("qrTitle").textContent = "QR code";
-    $("qrText").textContent = link;
-    $("qrText").title = what;
+    qrActiveWhat = what;
+    qrActiveLink = link;
+    qrActiveMode = "raw";
+    if ($("qrTabs")) {
+      $("qrTabs").style.display = link.startsWith("srt://") ? "flex" : "none";
+      $("qrTabRaw").className = "sm on";
+      $("qrTabLarix").className = "sm";
+      $("qrTabHaivision").className = "sm";
+    }
+    await updateQrImage();
     $("qrDlg").showModal();
   } catch (e) { alert("QR code: " + e.message); }
+}
+
+if ($("qrTabRaw")) {
+  $("qrTabRaw").addEventListener("click", () => { qrActiveMode = "raw"; $("qrTabRaw").className = "sm on"; $("qrTabLarix").className = "sm"; $("qrTabHaivision").className = "sm"; updateQrImage().catch(() => {}); });
+  $("qrTabLarix").addEventListener("click", () => { qrActiveMode = "larix"; $("qrTabRaw").className = "sm"; $("qrTabLarix").className = "sm on"; $("qrTabHaivision").className = "sm"; updateQrImage().catch(() => {}); });
+  $("qrTabHaivision").addEventListener("click", () => { qrActiveMode = "haivision"; $("qrTabRaw").className = "sm"; $("qrTabLarix").className = "sm"; $("qrTabHaivision").className = "sm on"; updateQrImage().catch(() => {}); });
 }
 $("linkAddr").addEventListener("change", drawLinks);
 
