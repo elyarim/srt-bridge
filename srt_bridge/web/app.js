@@ -7,6 +7,127 @@ let state = null;
 let settingsLoaded = false;
 const drawn = {}; // what each part showed last, so it is rebuilt only when it changed
 
+const I18N = {
+  en: {
+    nav_main: "Main",
+    nav_matrix: "Matrix",
+    nav_outputs: "Outputs",
+    nav_remote: "Remote access",
+    nav_setup: "Setup",
+    nav_log: "Log",
+    nav_help: "Help",
+    nav_logout: "Log out",
+    lbl_ports: "SRT ports",
+    lbl_port: "SRT port",
+    lbl_live: "Live",
+    lbl_recv: "Receivers",
+    lbl_in: "In",
+    lbl_out: "Out",
+    btn_copy: "Copy",
+    btn_links: "Links",
+    btn_edit: "Edit",
+    btn_reset: "Reset",
+    btn_off: "✕ Off",
+    btn_switch_on: "Switch on",
+    lamp_live: "LIVE",
+    lamp_waiting: "WAITING",
+    lamp_free: "FREE",
+    lamp_off: "OFF",
+    qr_title: "QR code",
+    qr_tab_raw: "Direct / Raw",
+    qr_tab_larix: "Larix App",
+    qr_tab_haivision: "Haivision Web",
+    qr_hint_raw: "Direct SRT URI. For phone camera scanner, select 'Larix App' or 'Haivision Web' above.",
+    qr_hint_larix: "Open Larix Broadcaster and scan this QR code to auto-import connection settings.",
+    qr_hint_haivision: "Standard web URL for mobile camera and Haivision Play Pro."
+  },
+  es: {
+    nav_main: "Principal",
+    nav_matrix: "Matriz",
+    nav_outputs: "Salidas",
+    nav_remote: "Acceso remoto",
+    nav_setup: "Configuración",
+    nav_log: "Bitácora",
+    nav_help: "Ayuda",
+    nav_logout: "Cerrar sesión",
+    lbl_ports: "Puertos SRT",
+    lbl_port: "Puerto SRT",
+    lbl_live: "En vivo",
+    lbl_recv: "Receptores",
+    lbl_in: "Entrada",
+    lbl_out: "Salida",
+    btn_copy: "Copiar",
+    btn_links: "Enlaces",
+    btn_edit: "Editar",
+    btn_reset: "Liberar",
+    btn_off: "✕ Cortar",
+    btn_switch_on: "Activar",
+    lamp_live: "EN VIVO",
+    lamp_waiting: "ESPERANDO",
+    lamp_free: "LIBRE",
+    lamp_off: "APAGADO",
+    qr_title: "Código QR",
+    qr_tab_raw: "SRT Puro",
+    qr_tab_larix: "Larix App",
+    qr_tab_haivision: "Haivision Web",
+    qr_hint_raw: "URI srt:// directo. Para celular selecciona 'Larix App' o 'Haivision Web' arriba.",
+    qr_hint_larix: "Abre Larix Broadcaster y escanea este QR para importar la conexión automáticamente.",
+    qr_hint_haivision: "Enlace web compatible con Haivision Play Pro y la cámara nativa del celular."
+  }
+};
+
+let currentLang = localStorage.getItem("srt_lang") || "en";
+function t(key, fallback) {
+  return (I18N[currentLang] && I18N[currentLang][key]) || fallback || key;
+}
+
+function updateLangSwitchUI() {
+  const enBtn = $("langEn");
+  const esBtn = $("langEs");
+  if (enBtn) {
+    enBtn.style.background = currentLang === "en" ? "#2158c7" : "transparent";
+    enBtn.style.color = currentLang === "en" ? "#fff" : "#8fa0bf";
+  }
+  if (esBtn) {
+    esBtn.style.background = currentLang === "es" ? "#2158c7" : "transparent";
+    esBtn.style.color = currentLang === "es" ? "#fff" : "#8fa0bf";
+  }
+}
+
+function applyLanguageToDOM() {
+  updateLangSwitchUI();
+  const navMap = {
+    main: "nav_main",
+    matrix: "nav_matrix",
+    outputs: "nav_outputs",
+    remote: "nav_remote",
+    setup: "nav_setup",
+    log: "nav_log",
+    help: "nav_help"
+  };
+  for (const [page, k] of Object.entries(navMap)) {
+    const btn = document.querySelector(`[data-go="${page}"]`);
+    if (btn) btn.textContent = t(k, btn.textContent);
+  }
+  if ($("logoutBtn")) $("logoutBtn").textContent = t("nav_logout", "Log out");
+  if ($("qrTabRaw")) $("qrTabRaw").textContent = t("qr_tab_raw", "Direct / Raw");
+  if ($("qrTabLarix")) $("qrTabLarix").textContent = t("qr_tab_larix", "Larix App");
+  if ($("qrTabHaivision")) $("qrTabHaivision").textContent = t("qr_tab_haivision", "Haivision Web");
+  for (const tile of tiles) {
+    if (tile.copyBtn) tile.copyBtn.textContent = t("btn_copy", "Copy");
+    if (tile.links) tile.links.textContent = t("btn_links", "Links");
+    if (tile.edit) tile.edit.textContent = t("btn_edit", "Edit");
+    if (tile.reset && !tile.reset.dataset.armed) tile.reset.textContent = t("btn_reset", "Reset");
+  }
+}
+
+function setLanguage(lang) {
+  currentLang = lang === "es" ? "es" : "en";
+  try { localStorage.setItem("srt_lang", currentLang); } catch {}
+  applyLanguageToDOM();
+  if (state) render(state);
+}
+
 function el(tag, attrs, ...kids) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -172,7 +293,7 @@ function renderSide() {
     if (state.whip.live) { wLive = 1; inp += state.whip.kbps / 1024; }
     for (const c of state.whip.receivers) { recv++; out += c.mbps; }
   }
-  put($("sidePortLbl"), perSignal() ? "SRT ports" : "SRT port");
+  put($("sidePortLbl"), perSignal() ? t("lbl_ports", "SRT ports") : t("lbl_port", "SRT port"));
   put($("sidePort"), range(state.portRange));
   $("sidePort").title = "UDP " + range(state.portRange);
   put($("sideSrt"), state.srtVersion);
@@ -201,12 +322,12 @@ function buildTile(slot) {
   t.lampText = el("span");
   t.lamp.append(t.lampText);
   t.sid = el("span", { class: "sid" });
-  t.copyBtn = el("button", { type: "button", class: "sm mini", onclick: () => copy(perSignal() ? String(state.places[slot - 1].port) : state.places[slot - 1].id, t.copyBtn) }, "Copy");
-  t.links = el("button", { type: "button", class: "sm narrow", onclick: () => openLinks(slot) }, "Links");
-  t.edit = el("button", { type: "button", class: "sm narrow", onclick: () => openEdit(slot) }, "Edit");
-  t.reset = el("button", { type: "button", class: "sm wide resetBtn", onclick: () => resetSignal(slot, t.reset) }, "Reset");
+  t.copyBtn = el("button", { type: "button", class: "sm mini", onclick: () => copy(perSignal() ? String(state.places[slot - 1].port) : state.places[slot - 1].id, t.copyBtn) }, t("btn_copy", "Copy"));
+  t.links = el("button", { type: "button", class: "sm narrow", onclick: () => openLinks(slot) }, t("btn_links", "Links"));
+  t.edit = el("button", { type: "button", class: "sm narrow", onclick: () => openEdit(slot) }, t("btn_edit", "Edit"));
+  t.reset = el("button", { type: "button", class: "sm wide resetBtn", onclick: () => resetSignal(slot, t.reset) }, t("btn_reset", "Reset"));
   t.reset.title = "clears stream ID, name, passphrases and receiver key of this signal (click twice)";
-  t.power = el("button", { type: "button", class: "sm wide powerBtn", onclick: () => togglePower(slot) }, "✕ Off");
+  t.power = el("button", { type: "button", class: "sm wide powerBtn", onclick: () => togglePower(slot) }, t("btn_off", "✕ Off"));
   t.root = el("div", { class: "tile" },
     el("div", { class: "tileHead" }, el("span", { class: "no" }, "# " + slot), t.name, t.lamp),
     el("div", { class: "idRow" }, t.sid, t.copyBtn),
@@ -228,7 +349,7 @@ function buildTile(slot) {
 
 // The power button: on = «✕ Off» switches the signal off; off = «Switch on».
 function showPower(btn, off, can, what) {
-  put(btn, off ? "Switch on" : "✕ Off", "sm wide powerBtn" + (off ? " isOff" : ""));
+  put(btn, off ? t("btn_switch_on", "Switch on") : t("btn_off", "✕ Off"), "sm wide powerBtn" + (off ? " isOff" : ""));
   btn.disabled = !can;
   btn.title = off ? "switched off: every device of this " + what + " is turned away. Click to switch it on again"
     : "switch this " + what + " off: its devices are disconnected and turned away while they keep calling";
@@ -251,7 +372,7 @@ function renderTiles() {
     t.root.className = "tile" + (p.off ? " off" : p.sender ? " live" : used ? "" : " free");
     put(t.name, label(p));
     t.name.title = label(p);
-    put(t.lampText, p.off ? "OFF" : s ? "LIVE" : used ? "WAITING" : "FREE");
+    put(t.lampText, p.off ? t("lamp_off", "OFF") : s ? t("lamp_live", "LIVE") : used ? t("lamp_waiting", "WAITING") : t("lamp_free", "FREE"));
     t.lamp.className = "lamp" + (p.off ? " bad" : s ? " live" : used ? " wait" : "");
     showPower(t.power, p.off, used || p.off, "signal");
     if (!t.reset.dataset.armed) t.reset.disabled = !p.id && !p.name && !p.passIn;
@@ -783,13 +904,13 @@ function buildQrTarget(mode, what, link) {
       + "&conn[][srtlatency]=" + (parsed.latency || state.latencyMs);
     if (parsed.streamid) l += "&conn[][srtstreamid]=" + encodeURIComponent(parsed.streamid);
     if (parsed.pass) l += "&conn[][srtpass]=" + encodeURIComponent(parsed.pass);
-    return { text: l, hint: "Open Larix Broadcaster and scan this QR code to auto-import connection settings." };
+    return { text: l, hint: t("qr_hint_larix", "Open Larix Broadcaster and scan this QR code to auto-import connection settings.") };
   }
   if (mode === "haivision") {
     const hv = "https://play.haivision.com/play?url=" + encodeURIComponent(link.replace("streamid=", "StreamID=").replace("latency=", "Latency="));
-    return { text: hv, hint: "Standard web URL for mobile camera and Haivision Play Pro." };
+    return { text: hv, hint: t("qr_hint_haivision", "Standard web URL for mobile camera and Haivision Play Pro.") };
   }
-  return { text: link, hint: "Direct SRT URI. For phone camera scanner, select 'Larix App' or 'Haivision Web' above." };
+  return { text: link, hint: t("qr_hint_raw", "Direct SRT URI. For phone camera scanner, select 'Larix App' or 'Haivision Web' above.") };
 }
 
 async function updateQrImage() {
@@ -1286,4 +1407,9 @@ async function poll() {
   }
   setTimeout(poll, 1000);
 }
+
+if ($("langEn")) $("langEn").addEventListener("click", () => setLanguage("en"));
+if ($("langEs")) $("langEs").addEventListener("click", () => setLanguage("es"));
+applyLanguageToDOM();
+
 poll();

@@ -23,7 +23,16 @@
       <button type="button" id="logoutBtn" hidden title="Ends the remote login in this browser">Log out</button>
     </nav>
     <div class="chBadge" id="portBadge">starting</div>
-    <div class="topRight"><div class="credit" id="credit">Peter Aellig</div><div id="clock">--:--:--</div></div>
+    <div class="topRight">
+      <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:2px;">
+        <div class="credit" id="credit">Peter Aellig</div>
+        <div class="langSwitch" style="display:inline-flex;border:1px solid #3d5a96;border-radius:6px;overflow:hidden;font-size:11px;">
+          <button type="button" id="langEn" style="background:#2158c7;color:#fff;border:0;padding:2px 6px;cursor:pointer;font-weight:600;">EN</button>
+          <button type="button" id="langEs" style="background:transparent;color:#8fa0bf;border:0;padding:2px 6px;cursor:pointer;font-weight:600;">ES</button>
+        </div>
+      </div>
+      <div id="clock">--:--:--</div>
+    </div>
     <div class="resources">
       <div><span id="sidePortLbl">SRT port</span><strong id="sidePort">–</strong></div>
       <div><span>Live</span><strong id="sideLive">–</strong></div>
