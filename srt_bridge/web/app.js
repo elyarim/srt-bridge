@@ -76,8 +76,10 @@ const I18N = {
   }
 };
 
-let currentLang = localStorage.getItem("srt_lang") || "en";
-function t(key, fallback) {
+let currentLang = "en";
+try { currentLang = localStorage.getItem("srt_lang") || "en"; } catch {}
+
+function tr(key, fallback) {
   return (I18N[currentLang] && I18N[currentLang][key]) || fallback || key;
 }
 
@@ -107,17 +109,17 @@ function applyLanguageToDOM() {
   };
   for (const [page, k] of Object.entries(navMap)) {
     const btn = document.querySelector(`[data-go="${page}"]`);
-    if (btn) btn.textContent = t(k, btn.textContent);
+    if (btn) btn.textContent = tr(k, btn.textContent);
   }
-  if ($("logoutBtn")) $("logoutBtn").textContent = t("nav_logout", "Log out");
-  if ($("qrTabRaw")) $("qrTabRaw").textContent = t("qr_tab_raw", "Direct / Raw");
-  if ($("qrTabLarix")) $("qrTabLarix").textContent = t("qr_tab_larix", "Larix App");
-  if ($("qrTabHaivision")) $("qrTabHaivision").textContent = t("qr_tab_haivision", "Haivision Web");
+  if ($("logoutBtn")) $("logoutBtn").textContent = tr("nav_logout", "Log out");
+  if ($("qrTabRaw")) $("qrTabRaw").textContent = tr("qr_tab_raw", "Direct / Raw");
+  if ($("qrTabLarix")) $("qrTabLarix").textContent = tr("qr_tab_larix", "Larix App");
+  if ($("qrTabHaivision")) $("qrTabHaivision").textContent = tr("qr_tab_haivision", "Haivision Web");
   for (const tile of tiles) {
-    if (tile.copyBtn) tile.copyBtn.textContent = t("btn_copy", "Copy");
-    if (tile.links) tile.links.textContent = t("btn_links", "Links");
-    if (tile.edit) tile.edit.textContent = t("btn_edit", "Edit");
-    if (tile.reset && !tile.reset.dataset.armed) tile.reset.textContent = t("btn_reset", "Reset");
+    if (tile.copyBtn) tile.copyBtn.textContent = tr("btn_copy", "Copy");
+    if (tile.links) tile.links.textContent = tr("btn_links", "Links");
+    if (tile.edit) tile.edit.textContent = tr("btn_edit", "Edit");
+    if (tile.reset && !tile.reset.dataset.armed) tile.reset.textContent = tr("btn_reset", "Reset");
   }
 }
 
@@ -293,7 +295,7 @@ function renderSide() {
     if (state.whip.live) { wLive = 1; inp += state.whip.kbps / 1024; }
     for (const c of state.whip.receivers) { recv++; out += c.mbps; }
   }
-  put($("sidePortLbl"), perSignal() ? t("lbl_ports", "SRT ports") : t("lbl_port", "SRT port"));
+  put($("sidePortLbl"), perSignal() ? tr("lbl_ports", "SRT ports") : tr("lbl_port", "SRT port"));
   put($("sidePort"), range(state.portRange));
   $("sidePort").title = "UDP " + range(state.portRange);
   put($("sideSrt"), state.srtVersion);
@@ -322,12 +324,12 @@ function buildTile(slot) {
   t.lampText = el("span");
   t.lamp.append(t.lampText);
   t.sid = el("span", { class: "sid" });
-  t.copyBtn = el("button", { type: "button", class: "sm mini", onclick: () => copy(perSignal() ? String(state.places[slot - 1].port) : state.places[slot - 1].id, t.copyBtn) }, t("btn_copy", "Copy"));
-  t.links = el("button", { type: "button", class: "sm narrow", onclick: () => openLinks(slot) }, t("btn_links", "Links"));
-  t.edit = el("button", { type: "button", class: "sm narrow", onclick: () => openEdit(slot) }, t("btn_edit", "Edit"));
-  t.reset = el("button", { type: "button", class: "sm wide resetBtn", onclick: () => resetSignal(slot, t.reset) }, t("btn_reset", "Reset"));
+  t.copyBtn = el("button", { type: "button", class: "sm mini", onclick: () => copy(perSignal() ? String(state.places[slot - 1].port) : state.places[slot - 1].id, t.copyBtn) }, tr("btn_copy", "Copy"));
+  t.links = el("button", { type: "button", class: "sm narrow", onclick: () => openLinks(slot) }, tr("btn_links", "Links"));
+  t.edit = el("button", { type: "button", class: "sm narrow", onclick: () => openEdit(slot) }, tr("btn_edit", "Edit"));
+  t.reset = el("button", { type: "button", class: "sm wide resetBtn", onclick: () => resetSignal(slot, t.reset) }, tr("btn_reset", "Reset"));
   t.reset.title = "clears stream ID, name, passphrases and receiver key of this signal (click twice)";
-  t.power = el("button", { type: "button", class: "sm wide powerBtn", onclick: () => togglePower(slot) }, t("btn_off", "✕ Off"));
+  t.power = el("button", { type: "button", class: "sm wide powerBtn", onclick: () => togglePower(slot) }, tr("btn_off", "✕ Off"));
   t.root = el("div", { class: "tile" },
     el("div", { class: "tileHead" }, el("span", { class: "no" }, "# " + slot), t.name, t.lamp),
     el("div", { class: "idRow" }, t.sid, t.copyBtn),
@@ -349,7 +351,7 @@ function buildTile(slot) {
 
 // The power button: on = «✕ Off» switches the signal off; off = «Switch on».
 function showPower(btn, off, can, what) {
-  put(btn, off ? t("btn_switch_on", "Switch on") : t("btn_off", "✕ Off"), "sm wide powerBtn" + (off ? " isOff" : ""));
+  put(btn, off ? tr("btn_switch_on", "Switch on") : tr("btn_off", "✕ Off"), "sm wide powerBtn" + (off ? " isOff" : ""));
   btn.disabled = !can;
   btn.title = off ? "switched off: every device of this " + what + " is turned away. Click to switch it on again"
     : "switch this " + what + " off: its devices are disconnected and turned away while they keep calling";
@@ -372,7 +374,7 @@ function renderTiles() {
     t.root.className = "tile" + (p.off ? " off" : p.sender ? " live" : used ? "" : " free");
     put(t.name, label(p));
     t.name.title = label(p);
-    put(t.lampText, p.off ? t("lamp_off", "OFF") : s ? t("lamp_live", "LIVE") : used ? t("lamp_waiting", "WAITING") : t("lamp_free", "FREE"));
+    put(t.lampText, p.off ? tr("lamp_off", "OFF") : s ? tr("lamp_live", "LIVE") : used ? tr("lamp_waiting", "WAITING") : tr("lamp_free", "FREE"));
     t.lamp.className = "lamp" + (p.off ? " bad" : s ? " live" : used ? " wait" : "");
     showPower(t.power, p.off, used || p.off, "signal");
     if (!t.reset.dataset.armed) t.reset.disabled = !p.id && !p.name && !p.passIn;
